@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { useBoards, useCurrentBoard } from './boardStore';
 import { AnalysisPanel } from './components/AnalysisPanel';
 import { BoardMode } from './components/board/BoardMode';
@@ -89,8 +89,11 @@ function useShortcuts() {
   }, []);
 }
 
+// The 3D engine is only downloaded the first time someone switches to 3D.
+const Pitch3D = lazy(() => import('./components/Pitch3D'));
+
 export default function App() {
-  const { current, stepIndex, playbackView, time, tab, setTab, update, presenting, setPlaying } = useStore();
+  const { current, stepIndex, playbackView, time, tab, setTab, update, presenting, setPlaying, settings } = useStore();
   const mode = useBoards((s) => s.mode);
   const setMode = useBoards((s) => s.setMode);
   const board = useCurrentBoard();
@@ -175,7 +178,13 @@ export default function App() {
         <section className="center">
           <Toolbar />
           <div className="pitch-wrap" data-tour="pitch">
-            <Pitch tactic={current} states={states} frame={frame} stepIndex={frame ? frame.stepIndex : stepIndex} interactive={!frame} />
+            {settings.view3d ? (
+              <Suspense fallback={<div className="pitch3d-loading">Loading the 3D view…</div>}>
+                <Pitch3D tactic={current} states={states} frame={frame} stepIndex={stepIndex} />
+              </Suspense>
+            ) : (
+              <Pitch tactic={current} states={states} frame={frame} stepIndex={frame ? frame.stepIndex : stepIndex} interactive={!frame} />
+            )}
             {frame && playingStep?.note && (
               <div className="caption"><b>Step {frame.stepIndex + 1}</b>{playingStep.note}</div>
             )}

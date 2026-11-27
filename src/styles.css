@@ -190,6 +190,21 @@ button.small { padding: 3px 8px; font-size: 12px; }
 .board-svg.tool-erase { cursor: cell; }
 .present .board-toolbar { background: #11171d; border-color: #222b35; }
 
+/* --- 3D view --- */
+.pitch3d { position: relative; width: 100%; height: 100%; min-height: 240px; border-radius: 12px; overflow: hidden; background: #0b1520; }
+.pitch3d-canvas { position: absolute; inset: 0; }
+.pitch3d-canvas canvas { cursor: grab; }
+.pitch3d-canvas canvas:active { cursor: grabbing; }
+.pitch3d-bar {
+  position: absolute; top: 10px; left: 10px; right: 10px; display: flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; pointer-events: none;
+}
+.pitch3d-bar > * { pointer-events: auto; }
+.pitch3d-bar button { background: rgba(12, 20, 29, 0.72); border-color: rgba(255, 255, 255, 0.16); color: #e6edf3; backdrop-filter: blur(6px); }
+.pitch3d-bar button.active { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+.pitch3d-bar .sep { width: 1px; background: rgba(255, 255, 255, 0.2); margin: 0 4px; }
+.pitch3d-loading, .pitch3d-error { display: grid; place-items: center; gap: 8px; width: 100%; height: 100%; color: var(--muted); text-align: center; padding: 20px; }
+.pitch3d-error { position: absolute; inset: 0; background: rgba(11, 21, 32, 0.92); color: #e6edf3; align-content: center; }
+
 /* --- Tutorial --- */
 .help-btn { width: 30px; height: 30px; padding: 0; border-radius: 50%; font-weight: 700; flex: none; }
 .piece-group { display: inline-flex; flex-wrap: wrap; gap: 6px; }
@@ -263,6 +278,8 @@ kbd {
   .playback .time { min-width: 0; margin-right: auto; }
   .toolbar { padding: 6px 16px; }
   .board-toolbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
+  .pitch3d-bar { flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; }
+  .pitch3d-bar button { flex: none; padding: 4px 8px; font-size: 12px; }
   .board-toolbar > * { flex: none; }
   .mode-switch button { padding: 4px 9px; }
   .topbar .title input { max-width: 40vw; }

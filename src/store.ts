@@ -20,6 +20,8 @@ export interface Settings {
   showLabels: boolean;
   /** Show the previous step's movement as a shadow while editing a step. */
   showPrevStep: boolean;
+  /** Show tactics in 3D (playback and viewing; editing is in 2D). */
+  view3d?: boolean;
 }
 
 interface State {

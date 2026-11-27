@@ -38,9 +38,10 @@ function calm() {
   boards().setPresenting(false);
 }
 
-function tactics(tab?: PanelTab) {
+function tactics(tab?: PanelTab, view3d = false) {
   calm();
   boards().setMode('tactics');
+  if (!!app().settings.view3d !== view3d) app().setSettings({ view3d });
   if (tab) app().setTab(tab);
 }
 
@@ -111,6 +112,13 @@ export const TOURS: Tour[] = [
         title: 'Play it back',
         body: 'Play the move with realistic running and ball speeds, scrub through it, slow it down or loop it. Present opens a full-screen view with your coaching notes, for showing the players.',
         before: () => tactics(),
+      },
+      {
+        target: 'view-toggle',
+        mobile: 'board',
+        title: 'Watch it in 3D',
+        body: 'Switch to 3D to see the move as a match: players run, turn and accelerate like real footballers, the ball flies for crosses, and you choose the camera (TV, tactical, behind the goal, following the ball) or drag to look around.\n\nEditing stays in 2D; Present works in both.',
+        before: () => tactics(undefined, true),
       },
       {
         target: 'tab-edit',

@@ -13,6 +13,7 @@ A web app for coaches and managers to **design, animate and analyse football tac
   - Undo/redo and keyboard shortcuts (`V R P C D S L` tools, `Space` play, `←/→` steps, `H` shadow, `Ctrl+Z`).
 - **Animation.** Play the tactic back with timed passes and lofted crosses; scrub, change speed and loop. **Present** mode shows a full-screen view with captions for players.
   - **Realistic motion**: players accelerate from a standstill (about 10 m in 1.8 s), keep their speed when a run carries on into the next step, arrive at pace and pull up, or set off early to time a run. They only slow down to stop or turn, so the team flows instead of stopping together at every step. In open play the clip starts with players already moving; at set pieces they start from a standstill.
+- **3D view.** Switch the pitch to **3D** (top-left of the toolbar) to watch a tactic as a match: players in kit run, turn and accelerate with the same realistic motion, the ball flies for crosses and lofted passes, and the step's runs and passes are drawn on the grass. Pick a camera (TV, Tactical, Behind goal, Follow the ball, Top) or drag to look around (Free); Names and Arrows can be switched off. It works in playback, step by step and in Present mode; editing stays in 2D. The 3D engine (three.js) is only downloaded the first time 3D is opened.
 - **Realistic players.** Script only the key runs; the engines move everyone else like a real team:
   - **Team defending** (*Make opponents react*): one player presses the ball, approaching from the inside to show the carrier down the line and only once the pass is played. One more blocks the most dangerous passing lane. The rest hold a compact zonal shape that slides, steps up and drops with the ball, and runners are tracked a metre or two goal-side. Nobody but the presser crowds the ball, and the back line holds the edge of the box until the ball gets there. At set pieces near their own goal (corners, wide free kicks, kick-ins), the box defence holds its zones, markers stay with their men and the keeper covers the near post without leaving the goal mouth.
   - **Team support** (*Move my team with the play*): the team on the ball moves as a unit. The back line pushes up behind the ball as rest defence, full-backs and midfielders support, the far side tucks in, runners attack the near post, far post, penalty spot and cutback zone when the ball goes wide, and the keeper sweeps behind a high line.
@@ -85,6 +86,8 @@ src/
   store.ts      Zustand store for animated tactics, with undo/redo, saved to localStorage
   boardStore.ts Zustand store for tactics boards (saved separately)
   tutorial/     guided tours (tours.ts), spotlight overlay, welcome and help dialogs
+  three/        3D view: scene (stadium, players with a running animation, ball, cameras),
+                pitch texture, and the camera / animation maths (views.ts)
 ```
 
 Coordinates are in metres. The home team (your team) always attacks to the right.

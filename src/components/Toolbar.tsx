@@ -47,8 +47,27 @@ export function Toolbar() {
   const { tool, setTool, stepIndex, undo, redo, past, future, toolSource, setToolSource, settings, setSettings } = useStore();
   const prevOn = settings.showPrevStep !== false;
   const active = TOOLS.find((t) => t.id === tool)!;
+  const in3d = !!settings.view3d;
+  const viewToggle = (
+    <span className="seg" role="group" aria-label="2D or 3D" data-tour="view-toggle">
+      <button className={!in3d ? 'active' : ''} onClick={() => setSettings({ view3d: false })} title="Top-down tactics board: edit and play">2D</button>
+      <button className={in3d ? 'active' : ''} onClick={() => setSettings({ view3d: true })} title="Watch the tactic in 3D from a choice of cameras">3D</button>
+    </span>
+  );
+  if (in3d) {
+    return (
+      <div className="toolbar" data-tour="tools">
+        {viewToggle}
+        <span className="sep" />
+        <button onClick={openOnBoard} title="Copy what's on screen onto a free tactics board, to move pieces and draw freely" data-tour="open-on-board">Open on board</button>
+        <span className="hint">3D view: pick a camera, or drag to look around. Switch to 2D to edit the move.</span>
+      </div>
+    );
+  }
   return (
     <div className="toolbar" data-tour="tools">
+      {viewToggle}
+      <span className="sep" />
       {TOOLS.map((t) => (
         <button key={t.id} className={tool === t.id ? 'active' : ''} onClick={() => setTool(t.id)} title={`${t.hint} (${t.key})`} data-tour={`tool-${t.id}`}>
           {t.label}
