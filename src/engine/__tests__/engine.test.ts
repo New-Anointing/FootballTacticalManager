@@ -8,8 +8,12 @@ import { PRESET_TACTICS } from '../../presets/tactics';
 import { analyseTactic } from '../analysis';
 import { frameAtTime, stepStartTime } from '../animation';
 import { generateAttack, generatePress, suggestFormations } from '../coach';
-import { PRESS_SPEED, reactAll, reactStep } from '../defence';
+import { deconflictStep } from '../deconflict';
+import { PRESS_SPEED, reactStep } from '../defence';
+import { easeInOut, pointAlong } from '../geometry';
 import { isOffside, shotXg } from '../options';
+import { autoTeams } from '../teams';
+import { discRadius } from '../../model/pitch';
 
 describe('formations', () => {
   it('every listed formation adds up to the format', () => {
@@ -110,7 +114,7 @@ describe('analysis', () => {
     expect(passive.length).toBeGreaterThan(0);
     expect(passive[0].fix?.kind).toBe('react-defence');
     // With the defensive engine, the same move is played against a reacting opponent.
-    t.steps = reactAll(t);
+    t.steps = autoTeams(t, { defend: ['away'] });
     expect(analyseTactic(t).findings.filter((f) => f.category === 'realism')).toEqual([]);
   });
 
@@ -206,6 +210,108 @@ describe('defensive engine', () => {
     const s = newStep();
     s.ball = { type: 'pass', from: 'a5', to: 'a6', releaseAt: 0.3 };
     expect(reactStep(t, boardStates(t)[0], s)).toEqual({});
+  });
+});
+
+describe('whole-team movement', () => {
+  it('moves the team in possession with the play and leaves scripted runs alone', () => {
+    const t = createTactic({ format: 11, homeFormation: '4-3-3', awayFormation: '4-4-2' });
+    t.ballOwner = 'h6';
+    const s = newStep();
+    s.duration = 3;
+    s.moves = { h9: [{ x: 80, y: 34 }] };
+    s.ball = { type: 'pass', from: 'h6', to: 'h9', releaseAt: 0.4 };
+    t.steps.push(s);
+    const before = boardStates(t)[0];
+    const steps = autoTeams(t, { support: ['home'], defend: ['away'], keep: true });
+    expect(steps[0].moves.h9).toEqual([{ x: 80, y: 34 }]);
+    // The back four, who have no runs of their own, push up behind the ball.
+    for (const id of ['h1', 'h2', 'h3', 'h4']) {
+      const path = steps[0].moves[id];
+      expect(path, id).toBeTruthy();
+      expect(path[path.length - 1].x - before.positions[id].x, id).toBeGreaterThan(3);
+    }
+  });
+
+  it("keeps a scripted defender's run when the rest of the team reacts", () => {
+    const t = createTactic({ format: 7, homeFormation: '2-3-1', awayFormation: '3-2-1' });
+    t.ballOwner = 'h2';
+    const s = newStep();
+    s.ball = { type: 'pass', from: 'h2', to: 'h4', releaseAt: 0.3 };
+    const scripted = [{ x: t.initial.a3.x - 2, y: t.initial.a3.y + 1 }];
+    s.moves = { a3: scripted };
+    t.steps.push(s);
+    const steps = autoTeams(t, { support: ['home'], defend: ['away'], keep: true });
+    expect(steps[0].moves.a3).toEqual(scripted);
+    expect(Object.keys(steps[0].moves).filter((id) => id.startsWith('a')).length).toBeGreaterThan(1);
+  });
+
+  it('bends an engine run round a player instead of through them', () => {
+    const t = createTactic({ format: 11, homeFormation: '4-3-3', awayFormation: '4-4-2' });
+    t.initial.h9 = { x: 70, y: 50 };
+    t.initial.a5 = { x: 60, y: 50 };
+    const s = newStep();
+    s.duration = 4;
+    s.moves = { a5: [{ x: 80, y: 50 }] }; // straight through #9
+    t.steps.push(s);
+    const before = boardStates(t)[0];
+    deconflictStep(t, before, s, new Set(['a5']));
+    const r = discRadius(pitchFor(11));
+    const path = [before.positions.a5, ...s.moves.a5];
+    let closest = Infinity;
+    for (let k = 0; k <= 40; k++) {
+      const me = pointAlong(path, easeInOut(k / 40));
+      closest = Math.min(closest, Math.hypot(me.x - 70, me.y - 50));
+    }
+    expect(closest).toBeGreaterThanOrEqual(1.8 * r);
+    // Round them, not short of the target.
+    const end = path[path.length - 1];
+    expect(Math.hypot(end.x - 80, end.y - 50)).toBeLessThan(0.5);
+  });
+
+  it('defends a corner from its zones, with the keeper in the goal mouth', () => {
+    const t = PRESET_TACTICS.find((x) => x.id === 'preset_11v11-corner')!;
+    const p = pitchFor(t.format);
+    const states = boardStates(t);
+    for (const st of states.slice(1)) {
+      const gk = st.positions.a0;
+      expect(Math.abs(gk.y - p.width / 2)).toBeLessThanOrEqual(p.goalWidth / 2);
+      // The box defence protects the goal instead of sliding across towards the ball:
+      // zonal players hold their zones and markers stay with runners who hold position.
+      for (const id of ['a2', 'a3']) {
+        expect(Math.hypot(st.positions[id].x - t.initial[id].x, st.positions[id].y - t.initial[id].y), id).toBeLessThan(5.5);
+      }
+      for (const id of ['a5', 'a6', 'a7']) {
+        expect(Math.hypot(st.positions[id].x - t.initial[id].x, st.positions[id].y - t.initial[id].y), id).toBeLessThan(1.5);
+        expect(st.positions[id].x).toBeGreaterThan(p.length - p.boxDepth);
+      }
+    }
+  });
+});
+
+describe('laws of the game in set pieces', () => {
+  it('flags an opponent inside the restart distance', () => {
+    const t = createTactic({ format: 11, phase: 'set-piece' });
+    t.ballOwner = 'h7';
+    t.initial.h7 = { x: 104.7, y: 0.3 };
+    t.initial.a5 = { x: 99, y: 4 }; // ~6.8 m from the corner
+    const f = analyseTactic(t).findings.find((x) => x.category === 'rules');
+    expect(f?.title).toContain('9.15 m');
+  });
+
+  it('requires opponents in their own half and outside the circle at a kick-off', () => {
+    const t = createTactic({ format: 11, phase: 'set-piece' });
+    const p = pitchFor(11);
+    t.ballOwner = 'h10';
+    t.initial.h10 = { x: p.length / 2, y: p.width / 2 };
+    // Opponents start outside the centre circle.
+    for (const pl of t.players.filter((x) => x.team === 'away')) {
+      const v = t.initial[pl.id];
+      if (Math.hypot(v.x - p.length / 2, v.y - p.width / 2) < p.centreRadius + 0.5) t.initial[pl.id] = { x: p.length / 2 + p.centreRadius + 1, y: v.y };
+    }
+    expect(analyseTactic(t).findings.filter((x) => x.category === 'rules')).toEqual([]);
+    t.initial.a10 = { x: p.length / 2 + 4, y: p.width / 2 + 2 };
+    expect(analyseTactic(t).findings.find((x) => x.category === 'rules')?.title).toContain('kick-off');
   });
 });
 

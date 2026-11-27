@@ -3,6 +3,7 @@ import { activePlayers, boardStates, playerById, playerLabel, type BoardState } 
 import type { Player, Step, Tactic, TeamSide, Vec } from '../model/types';
 import { ballFlight, frameAtStep, playerPath } from './animation';
 import { PRESS_SPEED, pressGap } from './defence';
+import { maxBackLine } from './support';
 import { dist, lerp, pathLength } from './geometry';
 import { isOffside, opponentsOf, passOptions, scaleFor, shotXg, teammatesOf } from './options';
 
@@ -12,7 +13,8 @@ export type Fix =
   | { kind: 'reroute-pass'; stepIndex: number; to: string }
   | { kind: 'extend-duration'; stepIndex: number; duration: number }
   | { kind: 'set-release'; stepIndex: number; releaseAt: number }
-  | { kind: 'react-defence'; stepIndex: number };
+  | { kind: 'react-defence'; stepIndex: number }
+  | { kind: 'support-shape'; stepIndex: number };
 
 export interface Finding {
   id: string;
@@ -48,6 +50,7 @@ export interface AnalysisReport {
 const MAX_SPRINT = 9.5; // m/s, elite top speed
 const HARD_SPRINT = 7.5;
 const MAX_PASS_SPEED = 32; // m/s, a driven pass
+const MAX_DRIBBLE = 7; // m/s, top speed with the ball
 const REACT = 1.2; // m an opponent can stretch to reach the ball
 
 let seq = 0;
@@ -89,6 +92,7 @@ export function analyseTactic(t: Tactic): AnalysisReport {
       });
     }
   }
+  checkSetup(t, findings);
   if (t.steps.length === 0) {
     findings.push({
       id: fid(), severity: 'info', category: 'setup', stepIndex: -1, players: [],
@@ -107,6 +111,7 @@ export function analyseTactic(t: Tactic): AnalysisReport {
 
     checkMovement(t, step, i, before, findings, p);
     if (possession === 'home' && t.showOpponents) checkOpponentRealism(t, step, i, states, findings);
+    if (possession === 'home') checkTeamSupport(t, step, i, states, findings);
     if (step.ball) checkBallAction(t, step, i, states, findings, m);
 
     if (possession) {
@@ -320,6 +325,93 @@ function checkOpponentRealism(t: Tactic, step: Step, i: number, states: BoardSta
   }
 }
 
+/** Distance opponents must keep at a restart (m). */
+function restartDistance(format: number): number {
+  if (format <= 5) return 5; // futsal kick-ins, corners and free kicks
+  if (format >= 10) return 9.15;
+  return 6.4; // common small-sided rule (7 yards)
+}
+
+/** Setup sanity: nobody starts on top of anyone, and set pieces respect the Laws. */
+function checkSetup(t: Tactic, findings: Finding[]) {
+  const p = pitchFor(t.format);
+  const r = discRadius(p);
+  const players = activePlayers(t).filter((pl) => t.initial[pl.id]);
+  outer: for (let a = 0; a < players.length; a++) {
+    for (let b = a + 1; b < players.length; b++) {
+      const pa = t.initial[players[a].id];
+      const pb = t.initial[players[b].id];
+      if (dist(pa, pb) < r * 1.6) {
+        findings.push({
+          id: fid(), severity: 'warning', category: 'setup', stepIndex: -1, players: [players[a].id, players[b].id],
+          title: `${playerLabel(players[a])} and ${playerLabel(players[b])} start on top of each other`,
+          detail: 'Give every player their own space in the Setup frame; markers stand a metre or two goal-side.',
+        });
+        break outer;
+      }
+    }
+  }
+  if (t.phase !== 'set-piece' || !t.showOpponents) return;
+  const owner = playerById(t, t.ballOwner);
+  const ball = owner ? t.initial[owner.id] : t.ballStart;
+  if (!owner || !ball) return;
+  const centre = { x: p.length / 2, y: p.width / 2 };
+  const kickOff = dist(ball, centre) < 1.5;
+  for (const o of t.players.filter((pl) => pl.team !== owner.team && t.initial[pl.id])) {
+    const pos = t.initial[o.id];
+    if (kickOff) {
+      const ownHalf = o.team === 'home' ? pos.x <= p.length / 2 + 0.3 : pos.x >= p.length / 2 - 0.3;
+      if (!ownHalf || dist(pos, centre) < p.centreRadius) {
+        findings.push({
+          id: fid(), severity: 'error', category: 'rules', stepIndex: -1, players: [o.id],
+          title: `${playerLabel(o)} is too close at the kick-off`,
+          detail: 'At a kick-off opponents must be in their own half and outside the centre circle.',
+        });
+        return;
+      }
+    } else if (dist(pos, ball) < restartDistance(t.format) - 0.2) {
+      findings.push({
+        id: fid(), severity: 'error', category: 'rules', stepIndex: -1, players: [o.id],
+        title: `${playerLabel(o)} is closer than ${restartDistance(t.format)} m to the restart`,
+        detail: `Opponents must be at least ${restartDistance(t.format)} m from the ball when a set piece is taken.`,
+      });
+      return;
+    }
+  }
+}
+
+/**
+ * Does the team in possession move with the play? Team-mates rooted to the spot
+ * while the ball goes forward leave the attack short of support and the rest
+ * defence miles behind it.
+ */
+function checkTeamSupport(t: Tactic, step: Step, i: number, states: BoardState[], findings: Finding[]) {
+  const p = pitchFor(t.format);
+  const before = states[i];
+  const after = states[i + 1];
+  const gain = progress('home', after.ball, p) - progress('home', before.ball, p);
+  if (gain < 0.1 || step.duration < 1) return;
+  const ballProg = progress('home', after.ball, p);
+  const involved = new Set([step.ball?.from, step.ball?.to, before.ballOwner, after.ballOwner].filter(Boolean) as string[]);
+  const stuck = teammatesOf(t, 'home').filter((pl) => {
+    if (pl.line === 'GK' || involved.has(pl.id)) return false;
+    const path = step.moves[pl.id];
+    const moved = path?.length ? pathLength(playerPath(step, pl.id, before.positions[pl.id])) : 0;
+    const prog = progress('home', before.positions[pl.id], p);
+    // Already holding the rest-defence height: that's where they should be.
+    if (prog >= maxBackLine(t.format) - 0.04) return false;
+    return moved < 0.5 && ballProg - prog > 0.3;
+  });
+  if (stuck.length >= 3) {
+    findings.push({
+      id: fid(), severity: 'warning', category: 'realism', stepIndex: i, players: stuck.map((pl) => pl.id),
+      title: 'Team-mates stand still while the ball goes forward',
+      detail: `${stuck.slice(0, 4).map((pl) => playerLabel(pl)).join(', ')}${stuck.length > 4 ? ' and others' : ''} don't move as the ball advances ${Math.round(gain * p.length)} m. The team should push up behind the ball and support the attack.`,
+      fix: { kind: 'support-shape', stepIndex: i },
+    });
+  }
+}
+
 function checkMovement(
   t: Tactic, step: Step, i: number, before: BoardState, findings: Finding[], p: ReturnType<typeof pitchFor>,
 ) {
@@ -331,6 +423,15 @@ function checkMovement(
     const len = pathLength(playerPath(step, id, start));
     const speed = len / Math.max(0.1, step.duration);
     const needed = Math.ceil((len / HARD_SPRINT) * 10) / 10;
+    // With the ball at their feet nobody runs at full sprint speed.
+    if (step.ball?.type === 'dribble' && step.ball.from === id && speed > MAX_DRIBBLE && speed <= MAX_SPRINT) {
+      findings.push({
+        id: fid(), severity: 'warning', category: 'movement', stepIndex: i, players: [id],
+        title: `${playerLabel(pl)} dribbles at ${speed.toFixed(1)} m/s`,
+        detail: `That is faster than anyone can run with the ball (about ${MAX_DRIBBLE} m/s). Shorten the carry or give the step more time.`,
+        fix: { kind: 'extend-duration', stepIndex: i, duration: Math.ceil((len / (MAX_DRIBBLE - 0.5)) * 10) / 10 },
+      });
+    }
     if (speed > MAX_SPRINT) {
       findings.push({
         id: fid(), severity: 'error', category: 'movement', stepIndex: i, players: [id],

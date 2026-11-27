@@ -76,7 +76,9 @@ export function tune(spec0: PresetSpec, log = console.error): PresetSpec {
     // Second pass: nudge other attackers involved in the remaining problems
     // (e.g. a runner who finishes on top of a defender).
     for (const id of stepProblems(spec, i).players) {
-      if (!id.startsWith('h') || id === mover) continue;
+      // Only adjust runs that are part of the design: players without a scripted run are
+      // moved by the support / defence engines and must stay that way.
+      if (!id.startsWith('h') || id === mover || !spec.steps[i].moves?.[id]) continue;
       const cur = spec.steps[i];
       const ref2 = endOf(cur, id) ?? startFraction(spec, i, id);
       let best2 = { score: stepProblems(spec, i).score, cost: 0, step: clone(cur) };

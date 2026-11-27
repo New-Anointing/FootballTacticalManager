@@ -13,7 +13,7 @@ const QUICK_QUESTIONS = [
 ];
 
 export function CoachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
-  const { current, setFormation, appendSteps, openTactic, settings, setStepIndex, setHighlight, reactOpponents } = useStore();
+  const { current, setFormation, appendSteps, openTactic, settings, setStepIndex, setHighlight, reactOpponents, supportTeam } = useStore();
   const report = reportOf(current);
   const [goal, setGoal] = useState<'balanced' | 'attack' | 'defend'>('balanced');
   const [message, setMessage] = useState<string | null>(null);
@@ -88,11 +88,11 @@ export function CoachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
       </div>
 
       <div className="card">
-        <h3>Realistic opponents</h3>
+        <h3>Realistic players</h3>
         <p>
-          Replace the opponents' movement with how a well-drilled side reacts in every step where you have the ball: the nearest player
-          presses, the rest hold a compact zonal shape, runners are tracked and beaten players recover. Then check the Analysis tab to see
-          whether your move still works.
+          Bring the players without a run of their own to life. Opponents react like a well-drilled side: one player presses, one covers
+          the most dangerous lane, the rest hold a compact zonal shape. Your free players move with the play: the back line pushes up
+          behind the ball, midfielders support, and runners fill the box when the ball goes wide. Then check the Analysis tab.
         </p>
         <div className="list-actions">
           <button
@@ -103,6 +103,15 @@ export function CoachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
             disabled={!current.showOpponents || current.steps.length === 0}
           >
             Make opponents react
+          </button>
+          <button
+            onClick={() => {
+              supportTeam();
+              setMessage('Your free players now move with the play. Undo (Ctrl+Z) restores the previous movement.');
+            }}
+            disabled={current.steps.length === 0}
+          >
+            Move my team with the play
           </button>
         </div>
       </div>

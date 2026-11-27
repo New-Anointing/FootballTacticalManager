@@ -44,6 +44,7 @@ export function AnalysisPanel() {
     }
     if (f.fix.kind === 'extend-duration') return `Make step ${f.fix.stepIndex + 1} last ${f.fix.duration}s`;
     if (f.fix.kind === 'react-defence') return `Make opponents react in step ${f.fix.stepIndex + 1}`;
+    if (f.fix.kind === 'support-shape') return `Move the team with the play in step ${f.fix.stepIndex + 1}`;
     return `Release at ${Math.round(f.fix.releaseAt * 100)}%`;
   };
 

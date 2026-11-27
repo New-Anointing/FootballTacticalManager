@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import type { Fix } from './engine/analysis';
-import { reactAll } from './engine/defence';
+import { autoTeams } from './engine/teams';
 import { applyFormation, isValidFormation } from './model/formations';
 import { cloneTactic, createTactic, newStep, type NewTacticOptions } from './model/tactic';
 import type { BallAction, Step, Tactic, TeamSide, Vec } from './model/types';
@@ -69,6 +69,8 @@ interface State {
   applyFix: (fix: Fix) => void;
   /** Replace opponent movement with realistic reactions in every step where we have the ball. */
   reactOpponents: () => void;
+  /** Move our players who have no run of their own with the play (shape, rest defence, box runs). */
+  supportTeam: () => void;
 
   // UI
   setTool: (t: Tool) => void;
@@ -283,7 +285,8 @@ export const useStore = create<State>()(
             if (!step) return;
             if (fix.kind === 'extend-duration') step.duration = Math.max(step.duration, fix.duration);
             if (fix.kind === 'set-release' && step.ball) step.ball.releaseAt = Math.round(fix.releaseAt * 100) / 100;
-            if (fix.kind === 'react-defence') t.steps = reactAll(t, { only: fix.stepIndex });
+            if (fix.kind === 'react-defence') t.steps = autoTeams(t, { defend: ['away'], only: fix.stepIndex });
+            if (fix.kind === 'support-shape') t.steps = autoTeams(t, { support: ['home'], only: fix.stepIndex });
             if (fix.kind === 'reroute-pass' && step.ball) {
               step.ball.to = fix.to;
               step.ball.target = undefined;
@@ -294,7 +297,11 @@ export const useStore = create<State>()(
 
         reactOpponents: () =>
           mutate((t) => {
-            t.steps = reactAll(t);
+            t.steps = autoTeams(t, { defend: ['away'] });
+          }),
+        supportTeam: () =>
+          mutate((t) => {
+            t.steps = autoTeams(t, { support: ['home'] });
           }),
 
         setTool: (tool) => set({ tool, toolSource: undefined }),
