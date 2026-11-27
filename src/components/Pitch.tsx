@@ -18,7 +18,7 @@ interface Props {
 
 const MARGIN = 3;
 
-function Field({ p, small }: { p: PitchSpec; small: boolean }) {
+export function Field({ p, small }: { p: PitchSpec; small: boolean }) {
   const stripes = 10;
   const sw = p.length / stripes;
   const c1 = small ? 'var(--court-1)' : 'var(--grass-1)';
@@ -211,7 +211,7 @@ function PlayerDisc({
   );
 }
 
-function contrastInk(hex: string): string {
+export function contrastInk(hex: string): string {
   const m = /^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(hex);
   if (!m) return '#000';
   const [r, g, b] = [m[1], m[2], m[3]].map((h) => parseInt(h, 16));

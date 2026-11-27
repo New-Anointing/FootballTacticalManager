@@ -37,6 +37,13 @@ A web app for coaches and managers to **design, animate and analyse football tac
   - *Generate press*: the nearest player presses the ball, the next players screen the passing lanes and the rest shift across.
   - Formation advice against the opponent's shape, coaching points drawn from the analysis, and related library tactics.
   - **Optional AI coach (Claude):** add an Anthropic API key in Settings to ask questions about the tactic in plain language. The key stays in your browser.
+- **Tactics board.** Switch the top bar to **Board** for a free, static board like a magnetic one in the dressing room: no steps and no animation.
+  - Drag players, the ball, cones, poles, mini goals and mannequins anywhere. Drag a box to select a group (for example the back four) and move it together; *Make a line* and *Spread evenly* tidy a selected line.
+  - **Squad and bench**: give players numbers and names, drag them (or tap *Place*, then the board) from the bench onto the pitch, and drag them off the board to send them back. *Line up* puts either team into any formation.
+  - **Draw**: run (dashed), pass (solid) and dribble (wavy) arrows, straight or curved, starting from a player; freehand pen, lines, shaded zones and text notes, in six colours. The eraser taps or scrubs things away.
+  - Full pitch or either half, any format from 4v4 to 11v11; the layout turns vertical automatically on a phone held upright.
+  - Several saved boards, undo/redo, **Export PNG** to share with players, and **Present** for a full-screen board you can still draw on.
+  - **Open on board** (in the Tactics toolbar) copies the moment on screen, with its runs and pass, onto a new board.
 - **Library.** Built-in tactics for every size of game, based on common coaching patterns and played against a defence that presses and tracks:
   - 4v4 wall pass and third-man run
   - futsal kick-off (ala isolation), futsal kick-in, and beating the press through the pivo
@@ -70,7 +77,9 @@ src/
   presets/      built-in tactics (written in pitch fractions so they scale to any pitch)
   ai/           optional Claude coach (loaded only when used)
   components/   React UI: pitch (SVG), toolbar, timeline, panels, dialogs
-  store.ts      Zustand store with undo/redo, saved to localStorage
+    board/      the free tactics board: canvas, toolbar, squad/bench, properties, PNG export
+  store.ts      Zustand store for animated tactics, with undo/redo, saved to localStorage
+  boardStore.ts Zustand store for tactics boards (saved separately)
 ```
 
 Coordinates are in metres. The home team (your team) always attacks to the right.

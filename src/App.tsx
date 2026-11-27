@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
+import { useBoards, useCurrentBoard } from './boardStore';
 import { AnalysisPanel } from './components/AnalysisPanel';
+import { BoardMode } from './components/board/BoardMode';
 import { CoachPanel } from './components/CoachPanel';
 import { EditPanel } from './components/EditPanel';
 import { Library } from './components/Library';
@@ -53,6 +55,8 @@ function useShortcuts() {
     const onKey = (e: KeyboardEvent) => {
       const target = e.target as HTMLElement;
       if (target.closest('input, textarea, select, [contenteditable]')) return;
+      // The tactics board has its own shortcuts.
+      if (useBoards.getState().mode === 'board') return;
       const s = useStore.getState();
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
@@ -83,7 +87,11 @@ function useShortcuts() {
 }
 
 export default function App() {
-  const { current, stepIndex, playbackView, time, tab, setTab, update, presenting } = useStore();
+  const { current, stepIndex, playbackView, time, tab, setTab, update, presenting, setPlaying } = useStore();
+  const mode = useBoards((s) => s.mode);
+  const setMode = useBoards((s) => s.setMode);
+  const board = useCurrentBoard();
+  const changeBoard = useBoards((s) => s.change);
   const [showNew, setShowNew] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [mobile, setMobile] = useState<'library' | 'board' | 'panel'>('board');
@@ -115,22 +123,42 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <div className="brand"><span className="logo">⚽</span><span className="wide-brand">Tactical Manager</span></div>
+        <div className="mode-switch" role="tablist" aria-label="Mode">
+          <button role="tab" aria-selected={mode === 'tactics'} className={mode === 'tactics' ? 'active' : ''} onClick={() => setMode('tactics')} title="Animated tactics, step by step, with analysis">
+            Tactics
+          </button>
+          <button
+            role="tab" aria-selected={mode === 'board'} className={mode === 'board' ? 'active' : ''}
+            onClick={() => { setPlaying(false); setMode('board'); }} title="Free tactics board: move players and draw, no steps"
+          >
+            Board
+          </button>
+        </div>
         <div className="title">
-          <input type="text" value={current.name} onChange={(e) => update((t) => void (t.name = e.target.value))} aria-label="Tactic name" />
+          {mode === 'board' ? (
+            <input type="text" value={board.name} onChange={(e) => changeBoard((b) => void (b.name = e.target.value))} aria-label="Board name" />
+          ) : (
+            <input type="text" value={current.name} onChange={(e) => update((t) => void (t.name = e.target.value))} aria-label="Tactic name" />
+          )}
         </div>
         <div className="actions">
-          <span className={`sev ${report.counts.error ? 'error' : report.counts.warning > 2 ? 'warning' : 'good'} wide`} style={{ alignSelf: 'center' }} title={report.verdict}>
-            {report.score} · {report.grade}
-          </span>
+          {mode === 'tactics' && (
+            <span className={`sev ${report.counts.error ? 'error' : report.counts.warning > 2 ? 'warning' : 'good'} wide`} style={{ alignSelf: 'center' }} title={report.verdict}>
+              {report.score} · {report.grade}
+            </span>
+          )}
           <button className="ghost" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} title="Toggle light / dark">{theme === 'dark' ? '☀' : '☾'}</button>
           <button onClick={() => setShowSettings(true)}>Settings</button>
         </div>
       </header>
       <nav className="mobile-tabs">
-        <button className={mobile === 'library' ? 'active' : ''} onClick={() => setMobile('library')}>Tactics</button>
-        <button className={mobile === 'board' ? 'active' : ''} onClick={() => setMobile('board')}>Board</button>
+        <button className={mobile === 'library' ? 'active' : ''} onClick={() => setMobile('library')}>{mode === 'board' ? 'Boards & squad' : 'Library'}</button>
+        <button className={mobile === 'board' ? 'active' : ''} onClick={() => setMobile('board')}>Pitch</button>
         <button className={mobile === 'panel' ? 'active' : ''} onClick={() => setMobile('panel')}>Details</button>
       </nav>
+      {mode === 'board' ? (
+        <BoardMode mobile={mobile} />
+      ) : (
       <main className="main" data-mobile={mobile}>
         <aside className="sidebar">
           <Library onNew={() => setShowNew(true)} />
@@ -158,9 +186,10 @@ export default function App() {
           {tab === 'coach' && <CoachPanel onOpenSettings={() => setShowSettings(true)} />}
         </aside>
       </main>
+      )}
       {showNew && <NewTacticDialog onClose={() => { setShowNew(false); setMobile('board'); }} />}
       {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} />}
-      {presenting && <PresentView />}
+      {presenting && mode === 'tactics' && <PresentView />}
     </div>
   );
 }
