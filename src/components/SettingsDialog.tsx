@@ -26,6 +26,9 @@ export function SettingsDialog({ onClose }: { onClose: () => void }) {
         <label className="check">
           <input type="checkbox" checked={settings.showGhosts} onChange={(e) => setSettings({ showGhosts: e.target.checked })} /> Show where players start each step (ghosts)
         </label>
+        <label className="check">
+          <input type="checkbox" checked={settings.showPrevStep !== false} onChange={(e) => setSettings({ showPrevStep: e.target.checked })} /> Show the previous step's movement as a shadow
+        </label>
 
         <h2>AI coach (optional)</h2>
         <p className="muted small">

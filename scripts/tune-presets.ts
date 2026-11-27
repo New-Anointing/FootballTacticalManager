@@ -17,7 +17,11 @@ const round3 = (v: number) => Math.round(v * 1000) / 1000;
 function stepProblems(spec: PresetSpec, i: number) {
   const r = analyseTactic(buildPreset({ ...spec, steps: spec.steps.slice(0, i + 1) }));
   const list = r.findings.filter((f) => f.stepIndex === i && (f.severity === 'error' || f.severity === 'warning'));
-  return { score: list.reduce((s, f) => s + (f.severity === 'error' ? 100 : 10), 0), list: list.map((f) => `[${f.severity}] ${f.title}`) };
+  return {
+    score: list.reduce((s, f) => s + (f.severity === 'error' ? 100 : 10), 0),
+    list: list.map((f) => `[${f.severity}] ${f.title}`),
+    players: [...new Set(list.flatMap((f) => f.players))],
+  };
 }
 
 function endOf(step: PresetStep, id: string): F | undefined {
@@ -69,6 +73,26 @@ export function tune(spec0: PresetSpec, log = console.error): PresetSpec {
       if (pr.score < best.score || (pr.score === best.score && cost < best.cost)) best = { score: pr.score, cost, step: s2 };
     }
     spec.steps[i] = best.step;
+    // Second pass: nudge other attackers involved in the remaining problems
+    // (e.g. a runner who finishes on top of a defender).
+    for (const id of stepProblems(spec, i).players) {
+      if (!id.startsWith('h') || id === mover) continue;
+      const cur = spec.steps[i];
+      const ref2 = endOf(cur, id) ?? startFraction(spec, i, id);
+      let best2 = { score: stepProblems(spec, i).score, cost: 0, step: clone(cur) };
+      if (best2.score === 0) break;
+      for (const ox of offs) for (const oy of offs) {
+        if (!ox && !oy) continue;
+        const s2 = clone(cur);
+        s2.moves = { ...(s2.moves ?? {}), [id]: [round3(Math.min(0.97, Math.max(0.03, ref2[0] + ox))), round3(Math.min(0.97, Math.max(0.03, ref2[1] + oy)))] };
+        const trial = clone(spec);
+        trial.steps[i] = s2;
+        const pr = stepProblems(trial, i);
+        const cost = (Math.abs(ox) + Math.abs(oy)) * 30;
+        if (pr.score < best2.score || (pr.score === best2.score && pr.score < 1000 && cost < best2.cost && best2.cost > 0)) best2 = { score: pr.score, cost, step: s2 };
+      }
+      spec.steps[i] = best2.step;
+    }
     log(`  ${spec.key} step ${i + 1}: ${base.list.join('; ')}  =>  ${stepProblems(spec, i).list.join('; ') || 'clean'}`);
   }
   return spec;

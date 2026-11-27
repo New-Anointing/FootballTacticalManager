@@ -1,95 +1,159 @@
 import type { Tactic } from '../model/types';
 import { buildPreset, type PresetSpec } from './builder';
 
-// Built-in tactics. Player ids follow formation order: h0/a0 = goalkeeper, then
-// each line from defence to attack, left to right from the team's own point of
-// view. Coordinates are fractions of the pitch; home attacks towards x = 1.
+// Built-in tactics, each based on a recognised coaching pattern:
+//  - futsal: kick-off isolation (2-1-1), rehearsed kick-in through the pivo, and
+//    using the pivo to beat a high press (lay-off to a player facing forward);
+//  - 7v7: 2v1 with a dribble inside and an overlap; 9v9: overload and switch;
+//  - 11v11: the 6 dropping between the centre-backs for a 3v2 against a two-striker
+//    press, a counter-attack with the first pass forward behind a high full-back,
+//    a touchline pressing trap with cover shadows, and a short corner and cutback.
 //
-// Opponents are NOT scripted: the defensive engine (engine/defence.ts) makes
-// them press, hold a zonal shape, track runners and recover, at realistic
-// speeds. Every preset is designed and tuned (scripts/tune-presets.ts) to work
-// against that active defence, and a test keeps it that way.
+// Player ids follow formation order: h0/a0 = goalkeeper, then each line from
+// defence to attack, left to right from the team's own point of view.
+// Coordinates are fractions of the pitch; home attacks towards x = 1.
+//
+// Opponents are NOT scripted: the defensive engine (engine/defence.ts) makes them
+// press with one player, block the most dangerous lane with a cover shadow, hold
+// a zonal shape and track runners, at realistic speeds and without crowding.
+// Every preset is designed and tuned (scripts/tune-presets.ts) to work against
+// that defence, and a test keeps it that way.
 
 export const PRESET_SPECS: PresetSpec[] = [
   {
-    key: '4v4-rotation',
-    name: '4v4 Rotation and third-man run',
-    description: 'Small-sided pattern: the wingers rotate to drag markers, the fixo finds the free player running in behind.',
+    key: '4v4-wall-pass',
+    name: '4v4 Wall pass and third-man run',
+    description: 'Small-sided pattern built on the pivot as a wall: the fixo plays into the high player, who lays it off to the ala arriving facing forward, then spins in behind for the return.',
     format: 4, phase: 'attack', home: '1-2', away: '1-2', ballOwner: 'h1',
     setup: {
-      h0: [0.05, 0.5], h1: [0.3, 0.5], h2: [0.55, 0.15], h3: [0.55, 0.85], a0: [0.96, 0.5], a1: [0.8, 0.5],
-      a2: [0.62, 0.68], a3: [0.62, 0.32],
+      h0: [0.05, 0.5], h1: [0.3, 0.5], h2: [0.44, 0.18], h3: [0.7, 0.62], a0: [0.96, 0.5], a1: [0.84, 0.52],
+      a2: [0.6, 0.66], a3: [0.6, 0.34],
     },
     steps: [
       {
-        d: 1.6, note: 'Fixo opens play to the right winger, who checks back to receive.', outcome: 'retain',
-        moves: { h3: [0.5, 0.82], h1: [0.36, 0.5], h2: [0.62, 0.15] },
-        ball: { type: 'pass', from: 'h1', to: 'h3', at: 0.3 },
+        d: 1.3, note: 'The fixo plays into the high player, who checks towards the ball to receive.', outcome: 'progress',
+        moves: { h3: [0.64, 0.64], h2: [0.48, 0.24] },
+        ball: { type: 'pass', from: 'h1', to: 'h3', at: 0.15 },
       },
       {
-        d: 1.6, note: 'Winger lays it back first time; the far winger starts a diagonal run behind.', outcome: 'retain',
-        moves: { h1: [0.42, 0.55], h2: [0.74, 0.3] },
-        ball: { type: 'pass', from: 'h3', to: 'h1', at: 0.25 },
+        d: 1.2, note: 'Wall pass: a quick lay-off to the ala, who arrives inside facing forward.', outcome: 'retain',
+        moves: { h2: [0.65, 0.38], h1: [0.36, 0.82] },
+        ball: { type: 'pass', from: 'h3', to: 'h2', at: 0.4 },
       },
       {
-        d: 1.6, note: 'Third-man ball: the fixo slides it into the runner behind the last defender.', outcome: 'progress',
-        moves: { h2: [0.82, 0.34], h3: [0.66, 0.78] },
-        ball: { type: 'pass', from: 'h1', to: 'h2', at: 0.3 },
+        d: 1.5, note: 'The high player spins in behind; the ala plays it straight back into the run.', outcome: 'chance',
+        moves: { h3: [0.89, 0.73] },
+        ball: { type: 'pass', from: 'h2', to: 'h3', at: 0.4 },
       },
       {
-        d: 1.4, note: 'Runner carries into the area.', outcome: 'chance',
-        moves: { h2: [0.9, 0.39] },
-        ball: { type: 'dribble', from: 'h2' },
-      },
-      {
-        d: 1, note: 'Finish across the keeper.', outcome: 'goal',
-        moves: { h2: [0.96, 0.39] },
-        ball: { type: 'shot', from: 'h2', target: [1, 0.55], at: 0.4 },
+        d: 0.8, note: 'Takes it on and finishes across the keeper.', outcome: 'goal',
+        moves: { h3: [0.92, 0.58] },
+        ball: { type: 'shot', from: 'h3', target: [1, 0.42], at: 0.7 },
       },
     ],
   },
   {
-    key: '5v5-kickoff',
-    name: 'Futsal kick-off: beat the press',
-    description: 'Kick-off against a pressing 2-2. Pivo plays back to draw both alas, the fixo plays first time down the line, then a pivo wall pass releases the ala for a back-post finish.',
-    format: 5, phase: 'set-piece', home: '1-2-1', away: '2-2', ballOwner: 'h4',
+    key: '5v5-kickoff-isolation',
+    name: 'Futsal kick-off: ala isolation (2-1-1)',
+    description: 'Kick-off isolation: three players move away from one side to form a 2-1-1, leaving the right ala 1v1 with space to attack after a diagonal from the fixo.',
+    format: 5, phase: 'set-piece', home: '1-2-1', away: '1-2-1', ballOwner: 'h4',
     setup: {
-      h4: [0.5, 0.5], h1: [0.3, 0.5], h2: [0.44, 0.15], h3: [0.44, 0.85],
+      h4: [0.5, 0.5], h1: [0.32, 0.5], h2: [0.44, 0.18], h3: [0.44, 0.88], a0: [0.97, 0.5], a1: [0.84, 0.5],
+      a2: [0.7, 0.72], a3: [0.7, 0.28], a4: [0.6, 0.5],
     },
     steps: [
       {
-        d: 1.2, note: 'Pivo plays back to the fixo. Both alas press; our right ala drops deep and wide.', outcome: 'retain',
-        moves: { h4: [0.6, 0.5], h2: [0.48, 0.12], h3: [0.38, 0.9] },
+        d: 1.3, note: 'The pivo plays back to the fixo. The pivo and left ala move away to the left, clearing the right side.', outcome: 'retain',
+        moves: { h4: [0.62, 0.3], h2: [0.46, 0.14], h3: [0.5, 0.9] },
         ball: { type: 'pass', from: 'h4', to: 'h1', at: 0.1 },
       },
       {
-        d: 1.3, note: 'Fixo plays first time to the right ala, away from the press. The pivo drifts into the right channel.', outcome: 'retain',
-        moves: { h4: [0.62, 0.8], h2: [0.56, 0.15] },
-        ball: { type: 'pass', from: 'h1', to: 'h3', at: 0.1 },
+        d: 1.6, note: 'Isolation: the fixo plays the diagonal into the right ala, now 1v1 with space in front.', outcome: 'progress',
+        moves: { h3: [0.6, 0.9] },
+        ball: { type: 'pass', from: 'h1', to: 'h3', at: 0.15 },
       },
       {
-        d: 1.1, note: 'Shown down the line, the ala plays it first time into the pivo.', outcome: 'progress',
-        moves: { h4: [0.66, 0.88], h3: [0.46, 0.74], h2: [0.62, 0.3] },
-        ball: { type: 'pass', from: 'h3', to: 'h4', at: 0.1 },
+        d: 2.4, note: 'The ala attacks the defender 1v1 and cuts inside onto the stronger foot.', outcome: 'chance',
+        moves: { h3: [0.86, 0.7], h4: [0.8, 0.3] },
+        ball: { type: 'dribble', from: 'h3' },
       },
       {
-        d: 1.3, note: 'Pivo holds it up under pressure, then lays it off inside to the ala.', outcome: 'retain',
-        moves: { h3: [0.58, 0.61], h2: [0.7, 0.2] },
-        ball: { type: 'pass', from: 'h4', to: 'h3', at: 0.38 },
+        d: 1.4, note: 'Shot to the far post, with the pivo following in for any rebound.', outcome: 'goal',
+        moves: { h4: [0.9, 0.4], h3: [0.97, 0.67] },
+        ball: { type: 'shot', from: 'h3', target: [1, 0.42], at: 0.7 },
+      },
+    ],
+  },
+  {
+    key: '5v5-kick-in',
+    name: 'Futsal kick-in: pivo wide, kicker shoots',
+    description: 'Rehearsed kick-in (only four seconds to take it): the base player finds the pivo wide, and the pivo plays the ball into the middle for the kicker, who has run inside, to shoot.',
+    format: 5, phase: 'set-piece', home: '1-2-1', away: '1-2-1', ballOwner: 'h3',
+    setup: {
+      h0: [0.06, 0.5], h1: [0.56, 0.55], h2: [0.62, 0.2], h3: [0.7, 0.995], h4: [0.84, 0.6], a0: [0.97, 0.5],
+      a1: [0.885, 0.55], a2: [0.74, 0.82], a3: [0.72, 0.36], a4: [0.62, 0.62],
+    },
+    steps: [
+      {
+        d: 1.5, note: 'Kick-in to the base player, who comes towards the ball.', outcome: 'retain',
+        moves: { h1: [0.58, 0.65], h4: [0.86, 0.78] },
+        ball: { type: 'pass', from: 'h3', to: 'h1', at: 0.2 },
       },
       {
-        d: 1.3, note: 'Third man: the ball goes in behind for the left ala.', outcome: 'chance',
-        moves: { h2: [0.86, 0.26], h4: [0.8, 0.72] },
-        ball: { type: 'pass', from: 'h3', to: 'h2', at: 0.2 },
+        d: 2, note: 'The base player finds the pivo, who has drifted wide. The kicker steps in off the line.', outcome: 'progress',
+        moves: { h3: [0.74, 0.8], h4: [0.83, 0.77] },
+        ball: { type: 'pass', from: 'h1', to: 'h4', at: 0.4 },
       },
       {
-        d: 1.5, note: 'Square ball to the pivo arriving at the back post.', outcome: 'chance',
-        moves: { h4: [0.9, 0.56] },
-        ball: { type: 'pass', from: 'h2', to: 'h4', at: 0.3 },
+        d: 1, note: 'The pivo plays it into the middle for the kicker arriving at the top of the area.', outcome: 'chance',
+        moves: { h3: [0.85, 0.64] },
+        ball: { type: 'pass', from: 'h4', to: 'h3', at: 0.6 },
       },
       {
-        d: 0.8, note: 'First-time finish.', outcome: 'goal',
-        ball: { type: 'shot', from: 'h4', target: [1, 0.42], at: 0.1 },
+        d: 0.8, note: 'Takes a touch inside and shoots.', outcome: 'goal',
+        moves: { h3: [0.97, 0.55] },
+        ball: { type: 'shot', from: 'h3', target: [1, 0.42], at: 0.7 },
+      },
+    ],
+  },
+  {
+    key: '5v5-pivot-press',
+    name: 'Futsal 3-1: beating the press through the pivo',
+    description: 'Against a high press, the ball goes into the pivo, who shields it and lays it off to a team-mate arriving facing forward; then a switch to the far ala attacking the back post.',
+    format: 5, phase: 'attack', home: '3-1', away: '2-2', ballOwner: 'h0',
+    setup: {
+      h0: [0.05, 0.5], h1: [0.24, 0.12], h2: [0.2, 0.5], h3: [0.24, 0.88], h4: [0.56, 0.6], a0: [0.96, 0.5],
+      a1: [0.6, 0.72], a2: [0.6, 0.32], a3: [0.32, 0.66], a4: [0.32, 0.34],
+    },
+    steps: [
+      {
+        d: 1.3, note: 'The keeper rolls it to the right ala, who drops wide away from the press.', outcome: 'retain',
+        moves: { h3: [0.2, 0.9], h4: [0.52, 0.8] },
+        ball: { type: 'pass', from: 'h0', to: 'h3', at: 0.15 },
+      },
+      {
+        d: 1.3, note: 'Down the line into the pivo, who has come short and wide.', outcome: 'progress',
+        moves: { h4: [0.48, 0.86], h2: [0.34, 0.55] },
+        ball: { type: 'pass', from: 'h3', to: 'h4', at: 0.2 },
+      },
+      {
+        d: 1.6, note: 'The pivo shields and lays it off to the fixo, arriving facing forward.', outcome: 'retain',
+        moves: { h2: [0.42, 0.6], h1: [0.5, 0.15] },
+        ball: { type: 'pass', from: 'h4', to: 'h2', at: 0.3 },
+      },
+      {
+        d: 2.7, note: 'The fixo carries forward, then switches play to the left ala running in behind.', outcome: 'progress',
+        moves: { h1: [0.76, 0.29], h4: [0.66, 0.78] },
+        ball: { type: 'pass', from: 'h2', to: 'h1', at: 0.5 },
+      },
+      {
+        d: 1.7, note: 'Square ball across the area to the pivo at the back post.', outcome: 'chance',
+        moves: { h4: [0.88, 0.56], h1: [0.86, 0.26] },
+        ball: { type: 'pass', from: 'h1', to: 'h4', at: 0.5 },
+      },
+      {
+        d: 1.1, note: 'Finish at the back post.', outcome: 'goal',
+        ball: { type: 'shot', from: 'h4', target: [1, 0.42], at: 0.6 },
       },
     ],
   },
@@ -127,39 +191,43 @@ export const PRESET_SPECS: PresetSpec[] = [
   },
   {
     key: '7v7-overlap',
-    name: '7v7 Overlap and cutback',
-    description: 'Right-sided combination: the centre-back overlaps, gets to the byline and cuts back for the late midfield runner.',
-    format: 7, phase: 'attack', home: '2-3-1', away: '3-2-1', ballOwner: 'h5',
+    name: '7v7 2v1: dribble inside, full-back overlaps',
+    description: '2-3-1 pattern: the wide midfielder dribbles inside to engage the defender while the right centre-back overlaps outside; the ball is released into the overlap for a cutback. Only one defender pushes on, so the other stays home.',
+    format: 7, phase: 'attack', home: '2-3-1', away: '3-2-1', ballOwner: 'h2',
     setup: {
-      h0: [0.06, 0.5], h1: [0.3, 0.35], h2: [0.36, 0.75], h3: [0.55, 0.2], h4: [0.48, 0.5], h5: [0.56, 0.86],
-      h6: [0.72, 0.5], a0: [0.96, 0.5], a3: [0.8, 0.28], a2: [0.8, 0.5], a1: [0.78, 0.74], a5: [0.64, 0.38],
-      a4: [0.65, 0.7], a6: [0.54, 0.58],
+      h0: [0.06, 0.5], h1: [0.24, 0.35], h2: [0.36, 0.78], h3: [0.52, 0.22], h4: [0.46, 0.5], h5: [0.52, 0.86],
+      h6: [0.72, 0.48], a0: [0.96, 0.5], a3: [0.8, 0.28], a2: [0.8, 0.5], a1: [0.79, 0.73], a5: [0.64, 0.38],
+      a4: [0.64, 0.66], a6: [0.52, 0.55],
     },
     steps: [
       {
-        d: 2.5, note: 'Right midfielder plays inside; the right centre-back starts the overlap.', outcome: 'retain',
-        moves: { h2: [0.6, 0.92], h4: [0.48, 0.46] },
-        ball: { type: 'pass', from: 'h5', to: 'h4', at: 0.3 },
+        d: 1.8, note: 'The right centre-back steps in and plays square to the wide midfielder.', outcome: 'retain',
+        ball: { type: 'pass', from: 'h2', to: 'h5', at: 0.3 },
       },
       {
-        d: 2.5, note: 'Ball out wide into the overlapping run; the midfielder drifts inside.', outcome: 'progress',
-        moves: { h2: [0.76, 0.93], h5: [0.68, 0.72], h6: [0.82, 0.45] },
-        ball: { type: 'pass', from: 'h4', to: 'h2', at: 0.3 },
+        d: 2.6, note: 'The wide midfielder dribbles inside to engage the defender; the centre-back sets off on the overlap.', outcome: 'progress',
+        moves: { h5: [0.62, 0.72], h2: [0.56, 0.92], h6: [0.8, 0.45] },
+        ball: { type: 'dribble', from: 'h5' },
       },
       {
-        d: 2, note: 'Overlapper drives to the byline; striker attacks the near post to take a defender away.', outcome: 'progress',
-        moves: { h2: [0.92, 0.86], h6: [0.92, 0.46], h5: [0.82, 0.58], h4: [0.66, 0.5] },
+        d: 2.4, note: 'The defender is committed: the ball is released into the overlap.', outcome: 'progress',
+        moves: { h2: [0.83, 0.92], h4: [0.66, 0.52] },
+        ball: { type: 'pass', from: 'h5', to: 'h2', at: 0.2 },
+      },
+      {
+        d: 1.6, note: 'Carry to the byline while the striker attacks the near post and the 6 arrives late.', outcome: 'progress',
+        moves: { h2: [0.92, 0.84], h6: [0.92, 0.46], h4: [0.8, 0.56] },
         ball: { type: 'dribble', from: 'h2' },
       },
       {
-        d: 1.4, note: 'Cutback to the penalty spot for the late runner.', outcome: 'chance',
-        moves: { h5: [0.85, 0.57] },
-        ball: { type: 'pass', from: 'h2', to: 'h5', at: 0.5 },
+        d: 1.9, note: 'Cutback to the 6, arriving late at the edge of the six-yard area.', outcome: 'retain',
+        moves: { h4: [0.83, 0.55], h2: [0.86, 0.84] },
+        ball: { type: 'pass', from: 'h2', to: 'h4', at: 0.2 },
       },
       {
-        d: 1, note: 'Finish from the penalty spot.', outcome: 'goal',
-        moves: { h5: [0.91, 0.6] },
-        ball: { type: 'shot', from: 'h5', target: [1, 0.46], at: 0.4 },
+        d: 0.9, note: 'The 6 takes it in stride and finishes low.', outcome: 'goal',
+        moves: { h4: [0.92, 0.55] },
+        ball: { type: 'shot', from: 'h4', target: [1, 0.44], at: 0.7 },
       },
     ],
   },
@@ -177,30 +245,30 @@ export const PRESET_SPECS: PresetSpec[] = [
       {
         d: 2, note: 'Left winger, under pressure, plays inside to the left midfielder.', outcome: 'retain',
         moves: { h4: [0.48, 0.33] },
-        ball: { type: 'pass', from: 'h6', to: 'h4', at: 0.5 },
+        ball: { type: 'pass', from: 'h6', to: 'h4', at: 0.6 },
       },
       {
-        d: 1.8, note: 'Sideways to the right midfielder, after a touch to draw the presser.', outcome: 'retain',
-        moves: { h5: [0.57, 0.55] },
-        ball: { type: 'pass', from: 'h4', to: 'h5', at: 0.65 },
+        d: 2.1, note: 'Sideways to the right midfielder, after a touch to draw the presser.', outcome: 'retain',
+        moves: { h5: [0.66, 0.46] },
+        ball: { type: 'pass', from: 'h4', to: 'h5', at: 0.5 },
       },
       {
         d: 2.5, note: 'Switch: long diagonal to the right winger, who is 1v1 with lots of space.', outcome: 'progress',
-        moves: { h6: [0.72, 0.14] },
+        moves: { h6: [0.72, 0.14], h8: [0.8, 0.81] },
         ball: { type: 'pass', from: 'h5', to: 'h8', at: 0.5 },
       },
       {
         d: 2.5, note: 'Winger attacks the full-back; striker and far winger attack the box.', outcome: 'progress',
-        moves: { h8: [0.86, 0.82], h7: [0.9, 0.56], h6: [[0.8, 0.2], [0.87, 0.36]] },
+        moves: { h8: [0.89, 0.97], h7: [0.87, 0.56], h6: [[0.8, 0.2], [0.87, 0.36]] },
         ball: { type: 'dribble', from: 'h8' },
       },
       {
-        d: 1.4, note: 'Cross to the back post.', outcome: 'chance',
-        moves: { h6: [0.84, 0.48] },
+        d: 1.7, note: 'Cross to the back post.', outcome: 'chance',
+        moves: { h6: [0.84, 0.51] },
         ball: { type: 'cross', from: 'h8', to: 'h6', at: 0.3 },
       },
       {
-        d: 1, note: 'Finish at the back post.', outcome: 'goal',
+        d: 1.6, note: 'Finish at the back post.', outcome: 'goal',
         moves: { h6: [0.87, 0.51] },
         ball: { type: 'shot', from: 'h6', target: [1, 0.52], at: 0.5 },
       },
@@ -208,89 +276,88 @@ export const PRESET_SPECS: PresetSpec[] = [
   },
   {
     key: '11v11-buildup',
-    name: '4-3-3 Build-up through the pivot',
-    description: 'Build out from the back against a 4-4-2: centre-backs split, the 6 drops between the strikers, and the 8 receives on the half-turn.',
+    name: '4-3-3 Build-up vs a 4-4-2 press: the 6 drops in',
+    description: 'Against two pressing strikers, the 6 drops between the centre-backs to make a 3v2. The free centre-back carries into midfield, finds the 10 between the lines, and the 10 releases the winger.',
     format: 11, phase: 'attack', home: '4-3-3', away: '4-4-2', ballOwner: 'h0',
     setup: {
-      h0: [0.04, 0.5], h1: [0.2, 0.08], h2: [0.1, 0.3], h3: [0.1, 0.7], h4: [0.2, 0.92], h5: [0.34, 0.28],
-      h6: [0.22, 0.5], h7: [0.34, 0.72], h8: [0.5, 0.1], h9: [0.56, 0.5], h10: [0.5, 0.9], a0: [0.96, 0.5],
-      a4: [0.58, 0.12], a3: [0.58, 0.38], a2: [0.58, 0.62], a1: [0.58, 0.88], a8: [0.4, 0.16], a7: [0.42, 0.4],
-      a6: [0.42, 0.6], a5: [0.4, 0.84], a10: [0.24, 0.36], a9: [0.24, 0.64],
+      h0: [0.04, 0.5], h1: [0.3, 0.06], h2: [0.12, 0.28], h3: [0.12, 0.72], h4: [0.3, 0.94], h5: [0.36, 0.32],
+      h6: [0.2, 0.5], h7: [0.38, 0.66], h8: [0.5, 0.08], h9: [0.56, 0.5], h10: [0.5, 0.92], a0: [0.96, 0.5],
+      a4: [0.62, 0.12], a3: [0.6, 0.38], a2: [0.6, 0.62], a1: [0.62, 0.88], a8: [0.44, 0.16], a7: [0.44, 0.4],
+      a6: [0.44, 0.6], a5: [0.44, 0.84], a10: [0.26, 0.38], a9: [0.26, 0.62],
     },
     steps: [
       {
-        d: 2, note: 'Keeper plays short to the left centre-back, who has split wide.', outcome: 'retain',
-        moves: { h2: [0.12, 0.24] },
-        ball: { type: 'pass', from: 'h0', to: 'h2', at: 0.3 },
+        d: 2, note: 'The 6 drops between the centre-backs: three against their two strikers.', outcome: 'retain',
+        moves: { h6: [0.12, 0.5], h2: [0.14, 0.22], h3: [0.14, 0.78] },
+        ball: { type: 'pass', from: 'h0', to: 'h6', at: 0.4 },
       },
       {
-        d: 2.5, note: 'Striker presses; the 6 drops into the gap between the two strikers.', outcome: 'retain',
-        moves: { h6: [0.2, 0.43], h5: [0.36, 0.3] },
-        ball: { type: 'pass', from: 'h2', to: 'h6', at: 0.6 },
+        d: 2.2, note: 'With both strikers committed, the 6 plays out to the free right centre-back.', outcome: 'retain',
+        ball: { type: 'pass', from: 'h6', to: 'h3', at: 0.2 },
       },
       {
-        d: 2.5, note: 'The 6 turns and finds the 8 on the half-turn between the lines.', outcome: 'progress',
-        moves: { h5: [0.33, 0.24], h8: [0.56, 0.08] },
-        ball: { type: 'pass', from: 'h6', to: 'h5', at: 0.7 },
+        d: 2.8, note: 'The free centre-back carries into midfield, drawing a midfielder out of their line.', outcome: 'progress',
+        moves: { h3: [0.3, 0.77], h7: [0.46, 0.62] },
+        ball: { type: 'dribble', from: 'h3' },
       },
       {
-        d: 2.5, note: 'The 8 drives forward into the space vacated by the full-back tracking the winger.', outcome: 'progress',
-        moves: { h5: [0.5, 0.3], h9: [0.66, 0.5], h1: [0.36, 0.08] },
-        ball: { type: 'dribble', from: 'h5' },
+        d: 3.4, note: 'The centre-back finds the 10 in the space between their lines, on the half-turn.', outcome: 'progress',
+        moves: { h7: [0.48, 0.6], h10: [0.6, 0.94] },
+        ball: { type: 'pass', from: 'h3', to: 'h7', at: 0.3 },
       },
       {
-        d: 3.5, note: 'Through ball for the striker, timed to stay onside.', outcome: 'progress',
-        moves: { h9: [0.7, 0.3] },
-        ball: { type: 'pass', from: 'h5', to: 'h9', at: 0.6 },
+        d: 3.1, note: 'The 10 releases the right winger, 1v1 against the full-back.', outcome: 'progress',
+        moves: { h10: [0.73, 0.77], h9: [0.7, 0.48], h8: [0.68, 0.18] },
+        ball: { type: 'pass', from: 'h7', to: 'h10', at: 0.5 },
       },
       {
-        d: 2.9, note: 'Striker carries into the box.', outcome: 'chance',
-        moves: { h9: [0.86, 0.45] },
-        ball: { type: 'dribble', from: 'h9' },
+        d: 3, note: 'The winger drives to the byline; the striker attacks the near post and the left winger the far post.', outcome: 'progress',
+        moves: { h10: [0.9, 0.82], h9: [0.9, 0.48], h8: [0.86, 0.3] },
+        ball: { type: 'dribble', from: 'h10' },
       },
       {
-        d: 1, note: 'Finish.', outcome: 'goal',
-        moves: { h9: [0.89, 0.45] },
-        ball: { type: 'shot', from: 'h9', target: [1, 0.53], at: 0.5 },
+        d: 1.9, note: 'Low cross into the six-yard area.', outcome: 'chance',
+        moves: { h9: [0.94, 0.62] },
+        ball: { type: 'pass', from: 'h10', to: 'h9', at: 0.6 },
+      },
+      {
+        d: 1.4, note: 'Finish.', outcome: 'goal',
+        moves: { h9: [0.91, 0.62] },
+        ball: { type: 'shot', from: 'h9', target: [1, 0.46], at: 0.1 },
       },
     ],
   },
   {
     key: '11v11-counter',
-    name: '4-4-2 Counter-attack after a regain',
-    description: 'Win the ball in midfield and attack the space behind a high line with three quick passes.',
+    name: '4-4-2 Counter: first pass forward, behind the full-back',
+    description: 'Win the ball in midfield and play forward at once into the space behind the high full-back, while the other striker and the far winger sprint ahead, timing their runs to stay onside.',
     format: 11, phase: 'transition', home: '4-4-2', away: '4-3-3', ballOwner: 'h6',
     setup: {
-      h0: [0.05, 0.5], h1: [0.24, 0.12], h2: [0.2, 0.38], h3: [0.2, 0.62], h4: [0.24, 0.88], h5: [0.38, 0.15],
-      h6: [0.4, 0.42], h7: [0.36, 0.6], h8: [0.4, 0.86], h9: [0.5, 0.36], h10: [0.48, 0.66], a0: [0.92, 0.5],
-      a4: [0.5, 0.1], a3: [0.6, 0.38], a2: [0.6, 0.62], a1: [0.5, 0.9], a7: [0.42, 0.24], a6: [0.43, 0.48],
-      a5: [0.42, 0.72], a10: [0.3, 0.14], a9: [0.28, 0.5], a8: [0.3, 0.86],
+      h0: [0.05, 0.5], h1: [0.22, 0.14], h2: [0.18, 0.38], h3: [0.18, 0.62], h4: [0.22, 0.86], h5: [0.34, 0.14],
+      h6: [0.34, 0.42], h7: [0.32, 0.62], h8: [0.36, 0.86], h9: [0.46, 0.4], h10: [0.48, 0.66], a0: [0.92, 0.5],
+      a4: [0.46, 0.08], a3: [0.62, 0.38], a2: [0.62, 0.62], a1: [0.5, 0.92], a7: [0.4, 0.3], a6: [0.44, 0.52],
+      a5: [0.4, 0.7], a10: [0.28, 0.16], a9: [0.26, 0.48], a8: [0.3, 0.84],
     },
     steps: [
       {
-        d: 2, note: 'Ball won: the first pass goes forward immediately to the striker checking short.', outcome: 'progress',
-        moves: { h9: [0.52, 0.42], h10: [0.56, 0.7], h5: [0.48, 0.12] },
-        ball: { type: 'pass', from: 'h6', to: 'h9', at: 0.2 },
+        d: 2.6, note: 'Ball won. One touch to set it, then the first pass goes forward into the space behind their high right-back, for the striker running the channel.', outcome: 'progress',
+        moves: { h10: [0.56, 0.72], h9: [0.56, 0.44], h5: [0.44, 0.14] },
+        ball: { type: 'pass', from: 'h6', to: 'h10', at: 0.5 },
       },
       {
-        d: 3.7, note: 'Lay-off into the second striker running into the space behind the full-back.', outcome: 'progress',
-        moves: { h10: [0.71, 0.61], h8: [0.54, 0.88] },
-        ball: { type: 'pass', from: 'h9', to: 'h10', at: 0.35 },
-      },
-      {
-        d: 4, note: 'Carry at speed while the striker spins in behind the centre-back.', outcome: 'progress',
-        moves: { h10: [0.82, 0.64], h9: [[0.62, 0.46], [0.78, 0.44]], h5: [0.68, 0.2] },
+        d: 4.5, note: 'The striker carries at speed. The strike partner and the far winger sprint ahead, staying level with the last defender.', outcome: 'progress',
+        moves: { h10: [0.75, 0.7], h9: [0.74, 0.46], h5: [0.66, 0.2] },
         ball: { type: 'dribble', from: 'h10' },
       },
       {
-        d: 2.2, note: 'Square ball across the box to the striker attacking the far post.', outcome: 'chance',
-        moves: { h9: [0.89, 0.48] },
-        ball: { type: 'pass', from: 'h10', to: 'h9', at: 0.4 },
+        d: 2.8, note: 'With the centre-back drawn across, the ball goes across to the strike partner.', outcome: 'chance',
+        moves: { h9: [0.86, 0.55], h10: [0.72, 0.61] },
+        ball: { type: 'pass', from: 'h10', to: 'h9', at: 0.5 },
       },
       {
-        d: 1, note: 'Tap-in.', outcome: 'goal',
-        moves: { h9: [0.91, 0.5] },
-        ball: { type: 'shot', from: 'h9', target: [1, 0.55], at: 0.45 },
+        d: 1.4, note: 'Takes a touch and finishes into the far corner.', outcome: 'goal',
+        moves: { h9: [0.89, 0.55] },
+        ball: { type: 'shot', from: 'h9', target: [1, 0.44], at: 0.5 },
       },
     ],
   },
@@ -322,8 +389,8 @@ export const PRESET_SPECS: PresetSpec[] = [
         ball: { type: 'pass', from: 'a4', to: 'h1', at: 0.45 },
       },
       {
-        d: 2, note: 'Win it and attack immediately while they are out of shape.', outcome: 'progress',
-        moves: { h9: [0.86, 0.44], h10: [0.8, 0.7], h5: [0.76, 0.24] },
+        d: 2.1, note: 'Win it, take a touch to set, then attack while they are still out of shape.', outcome: 'progress',
+        moves: { h9: [0.86, 0.44], h10: [0.8, 0.7], h5: [0.82, 0.27] },
         ball: { type: 'pass', from: 'h1', to: 'h5', at: 0.6 },
       },
     ],
@@ -336,29 +403,29 @@ export const PRESET_SPECS: PresetSpec[] = [
     setup: {
       h0: [0.3, 0.5], h1: [0.55, 0.12], h2: [0.55, 0.4], h3: [0.9, 0.62], h4: [0.55, 0.85], h5: [0.84, 0.14],
       h6: [0.7, 0.6], h7: [1, 0.005], h8: [0.9, 0.42], h9: [0.88, 0.54], h10: [0.91, 0.7], a0: [0.99, 0.5],
-      a1: [0.95, 0.62], a2: [0.94, 0.46], a3: [0.94, 0.54], a4: [0.97, 0.4], a5: [0.9, 0.44], a6: [0.91, 0.58],
-      a7: [0.9, 0.68], a8: [0.93, 0.36], a9: [0.62, 0.5], a10: [0.92, 0.12],
+      a1: [0.95, 0.62], a2: [0.94, 0.46], a3: [0.94, 0.54], a4: [0.97, 0.4], a5: [0.93, 0.44], a6: [0.925, 0.58],
+      a7: [0.94, 0.68], a8: [0.93, 0.36], a9: [0.62, 0.5], a10: [0.92, 0.12],
     },
     steps: [
       {
-        d: 1.6, note: 'The 6 comes short towards the flag for a 2v1. The 10 drifts out of the box to lose their marker.', outcome: 'retain',
-        moves: { h5: [0.84, 0.08], h8: [0.8, 0.44] },
-        ball: { type: 'pass', from: 'h7', to: 'h5', at: 0.6 },
+        d: 2.2, note: 'The 6 comes short towards the flag for a 2v1. The 10 drifts out of the box to lose their marker.', outcome: 'retain',
+        moves: { h5: [0.75, 0.08], h8: [[0.87, 0.5], [0.8, 0.52]] },
+        ball: { type: 'pass', from: 'h7', to: 'h5', at: 0.4 },
       },
       {
-        d: 2.3, note: 'The 6 drives inside along the byline; the box runners hold their markers on the six-yard line.', outcome: 'progress',
-        moves: { h5: [0.96, 0.24], h7: [0.95, 0.06], h9: [0.93, 0.52], h3: [0.94, 0.64] },
+        d: 2.4, note: 'The 6 drives inside along the byline; the box runners hold their markers on the six-yard line.', outcome: 'progress',
+        moves: { h5: [0.84, 0.03], h7: [0.95, 0.06], h9: [0.93, 0.52], h3: [0.94, 0.64] },
         ball: { type: 'dribble', from: 'h5' },
       },
       {
-        d: 1.6, note: 'Cutback to the 10, arriving late between the penalty spot and the six-yard box.', outcome: 'chance',
-        moves: { h8: [0.85, 0.46] },
-        ball: { type: 'pass', from: 'h5', to: 'h8', at: 0.3 },
+        d: 2.2, note: 'Cutback to the 10, arriving late between the penalty spot and the six-yard box.', outcome: 'chance',
+        moves: { h8: [0.85, 0.43] },
+        ball: { type: 'pass', from: 'h5', to: 'h8', at: 0.4 },
       },
       {
-        d: 1.1, note: 'Takes one touch towards goal and finishes into the far corner.', outcome: 'goal',
-        moves: { h8: [0.91, 0.4] },
-        ball: { type: 'shot', from: 'h8', target: [1, 0.55], at: 0.5 },
+        d: 1.2, note: 'Takes one touch towards goal and finishes into the far corner.', outcome: 'goal',
+        moves: { h8: [0.91, 0.4], h9: [0.9, 0.64] },
+        ball: { type: 'shot', from: 'h8', target: [1, 0.55], at: 0.6 },
       },
     ],
   },

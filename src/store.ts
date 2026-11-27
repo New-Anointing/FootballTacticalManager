@@ -16,6 +16,8 @@ export interface Settings {
   apiKey: string;
   showGhosts: boolean;
   showLabels: boolean;
+  /** Show the previous step's movement as a shadow while editing a step. */
+  showPrevStep: boolean;
 }
 
 interface State {
@@ -122,7 +124,7 @@ export const useStore = create<State>()(
         loop: false,
         presenting: false,
         highlight: [],
-        settings: { homeColor: '#f5c518', awayColor: '#e5484d', apiKey: '', showGhosts: true, showLabels: true },
+        settings: { homeColor: '#f5c518', awayColor: '#e5484d', apiKey: '', showGhosts: true, showLabels: true, showPrevStep: true },
         past: [],
         future: [],
         dirty: false,

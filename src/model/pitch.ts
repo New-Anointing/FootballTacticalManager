@@ -73,3 +73,8 @@ export function inPenaltyArea(side: TeamSide, pos: Vec, p: PitchSpec): boolean {
 export function frac(fx: number, fy: number, p: PitchSpec): Vec {
   return { x: fx * p.length, y: fy * p.width };
 }
+
+/** Radius (m) of a player disc on the board for this pitch. Marking distances use it so they read clearly. */
+export function discRadius(p: PitchSpec): number {
+  return Math.min(1.8, Math.max(0.9, p.length * 0.0125 + 0.4));
+}

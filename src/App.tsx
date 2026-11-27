@@ -73,6 +73,8 @@ function useShortcuts() {
         s.selectPlayer(undefined);
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && s.selectedPlayer && s.stepIndex >= 0) {
         s.clearMove(s.selectedPlayer);
+      } else if (e.key.toLowerCase() === 'h') {
+        s.setSettings({ showPrevStep: s.settings.showPrevStep === false });
       } else if (TOOL_KEYS[e.key.toLowerCase()]) s.setTool(TOOL_KEYS[e.key.toLowerCase()]);
     };
     window.addEventListener('keydown', onKey);

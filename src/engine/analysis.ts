@@ -1,8 +1,8 @@
-import { attackingGoal, inPenaltyArea, insidePitch, ownGoal, pitchFor, progress } from '../model/pitch';
+import { attackingGoal, discRadius, inPenaltyArea, insidePitch, ownGoal, pitchFor, progress } from '../model/pitch';
 import { activePlayers, boardStates, playerById, playerLabel, type BoardState } from '../model/tactic';
 import type { Player, Step, Tactic, TeamSide, Vec } from '../model/types';
 import { ballFlight, frameAtStep, playerPath } from './animation';
-import { PRESS_SPEED } from './defence';
+import { PRESS_SPEED, pressGap } from './defence';
 import { dist, lerp, pathLength } from './geometry';
 import { isOffside, opponentsOf, passOptions, scaleFor, shotXg, teammatesOf } from './options';
 
@@ -209,6 +209,79 @@ function checkOpponentRealism(t: Tactic, step: Step, i: number, states: BoardSta
     }
   }
 
+  // An opponent on top of an attacker who doesn't have the ball, at the end of the step
+  // or while the players are moving (what you see in playback).
+  const overlap = discRadius(p) * 1.8;
+  // The ball carrier can be pressed closely, but not run through.
+  const contact = discRadius(p) * 1.15;
+  onTop: for (const tt of [0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1]) {
+    const fr = tt === 1 ? { positions: after.positions } : frameAtStep(t, states, i, tt);
+    for (const o of opp) {
+      const op = fr.positions[o.id];
+      if (!op) continue;
+      const victim = teammatesOf(t, 'home').find((h) => {
+        const hp = fr.positions[h.id];
+        if (!hp) return false;
+        const carrying = h.id === before.ballOwner || h.id === after.ballOwner || h.id === step.ball?.from || h.id === step.ball?.to;
+        const d = dist(hp, op);
+        if (d >= (carrying ? contact : overlap)) return false;
+        // Already close at the start of the step (e.g. the presser on the player who
+        // just passed) and moving apart: that's not running on top of someone.
+        const d0 = before.positions[h.id] && before.positions[o.id] ? dist(before.positions[h.id], before.positions[o.id]) : Infinity;
+        return !(d0 < overlap && d >= d0 - 0.2);
+      });
+      if (victim) {
+        findings.push({
+          id: fid(), severity: 'warning', category: 'realism', stepIndex: i, players: [victim.id, o.id],
+          title: `${playerLabel(o)} runs on top of ${playerLabel(victim)}`,
+          detail: 'Defenders mark from a metre or two goal-side so they can react, and players run around each other, not through each other.',
+          fix,
+        });
+        break onTop;
+      }
+    }
+  }
+
+  // Two opponents converging on the ball carrier at once (during the step or at its end):
+  // real teams press with one and cover the passing lanes with the rest.
+  const carrierId = step.ball?.type === 'dribble' ? step.ball.from : after.ballOwner;
+  if (carrierId && playerById(t, carrierId)?.team === 'home') {
+    // A dribbler is judged all the way; a receiver only once the ball has arrived.
+    const times = step.ball?.type === 'dribble' ? [0.25, 0.5, 0.75, 1] : [1];
+    for (const tt of times) {
+      const fr = tt === 1 ? { positions: after.positions } : frameAtStep(t, states, i, tt);
+      const c = fr.positions[carrierId];
+      if (!c) continue;
+      // Pressing range: anyone this close is engaging the carrier, not covering a lane.
+      const pressRange = pressGap(t.format) + 1.2;
+      const close = opp.filter((o) => fr.positions[o.id] && dist(fr.positions[o.id], c) < pressRange);
+      if (close.length >= 2) {
+        findings.push({
+          id: fid(), severity: 'warning', category: 'realism', stepIndex: i, players: [carrierId, ...close.map((o) => o.id)],
+          title: `Two opponents close down ${playerLabel(playerById(t, carrierId)!)} at once`,
+          detail: `${close.map((o) => playerLabel(o)).join(' and ')} both converge on the ball carrier. Real teams press with one and use the others to cover passing lanes.`,
+          fix,
+        });
+        break;
+      }
+    }
+  }
+
+  // Two opponents crowding the same attacker: unrealistic (it leaves someone else free)
+  // and it makes a move look impossible when a real team would never defend that way.
+  const homeAfter = teammatesOf(t, 'home').filter((h) => h.line !== 'GK' && after.positions[h.id]);
+  for (const h of homeAfter) {
+    const close = opp.filter((o) => dist(after.positions[o.id], after.positions[h.id]) < Math.max(2.2 * Math.max(1, s), discRadius(p) * 2.2));
+    if (close.length >= 2 && after.ballOwner !== h.id) {
+      findings.push({
+        id: fid(), severity: 'warning', category: 'realism', stepIndex: i, players: [h.id, ...close.map((o) => o.id)],
+        title: `Two opponents crowd ${playerLabel(h)}`,
+        detail: `${close.map((o) => playerLabel(o)).join(' and ')} are both on top of the same player, which leaves space elsewhere. Real defences press with one and cover lanes with the rest.`,
+        fix,
+      });
+      break;
+    }
+  }
   if (a?.type === 'shot') return; // the ball ends in the net; pressure on the shooter is judged by xG / blockers
   // Nobody closes down the ball even though someone could have.
   const ball = after.ball;
@@ -352,11 +425,12 @@ function checkBallAction(
     return;
   }
   if (a.type === 'dribble') {
-    const end = after.positions[a.from];
-    const press = opponents
-      .map((o) => after.positions[o.id])
-      .filter(Boolean)
-      .some((o) => dist(o, end) < 1.5);
+    // Check the whole carry, not just where it ends: running through a defender is a lost duel.
+    const press = [0.25, 0.5, 0.75, 1].some((tt) => {
+      const fr = tt === 1 ? { positions: after.positions } : frameAtStep(t, states, i, tt);
+      const c = fr.positions[a.from];
+      return opponents.some((o) => fr.positions[o.id] && dist(fr.positions[o.id], c) < (tt === 1 ? 1.5 : 1.1));
+    });
     if (press) {
       findings.push({
         id: fid(), severity: mine ? 'warning' : 'good', category: mine ? 'passing' : 'defending', stepIndex: i, players: [a.from],

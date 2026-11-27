@@ -11,7 +11,8 @@ const TOOLS: { id: Tool; label: string; key: string; hint: string }[] = [
 ];
 
 export function Toolbar() {
-  const { tool, setTool, stepIndex, undo, redo, past, future, toolSource, setToolSource } = useStore();
+  const { tool, setTool, stepIndex, undo, redo, past, future, toolSource, setToolSource, settings, setSettings } = useStore();
+  const prevOn = settings.showPrevStep !== false;
   const active = TOOLS.find((t) => t.id === tool)!;
   return (
     <div className="toolbar">
@@ -20,6 +21,15 @@ export function Toolbar() {
           {t.label}
         </button>
       ))}
+      <span className="sep" />
+      <button
+        className={prevOn ? 'active' : ''}
+        onClick={() => setSettings({ showPrevStep: !prevOn })}
+        aria-pressed={prevOn}
+        title={`${prevOn ? 'Hide' : 'Show'} the previous step's movement as a shadow (H)`}
+      >
+        Prev step {prevOn ? 'on' : 'off'}
+      </button>
       <span className="sep" />
       <button onClick={undo} disabled={!past.length} title="Undo (Ctrl+Z)">Undo</button>
       <button onClick={redo} disabled={!future.length} title="Redo (Ctrl+Shift+Z)">Redo</button>

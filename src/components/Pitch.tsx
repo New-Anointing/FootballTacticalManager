@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
 import { ballFlight, playerAt, type Frame } from '../engine/animation';
 import { clamp, dist } from '../engine/geometry';
-import { attackingGoal, pitchFor, type PitchSpec } from '../model/pitch';
+import { attackingGoal, discRadius, pitchFor, type PitchSpec } from '../model/pitch';
 import { activePlayers, playerById, type BoardState } from '../model/tactic';
 import type { Player, Step, Tactic, Vec } from '../model/types';
 import { useStore } from '../store';
@@ -97,12 +97,16 @@ interface ArrowsProps {
   r: number;
   colors: { home: string; away: string };
   faded?: boolean;
+  /** Overrides the layer opacity (used for the previous-step shadow). */
+  opacity?: number;
+  /** Prefix for marker ids so a layer can use its own (dimmer) arrowheads. */
+  marker?: string;
 }
 
-function StepArrows({ tactic, step, before, after, r, colors, faded }: ArrowsProps) {
+function StepArrows({ tactic, step, before, after, r, colors, faded, opacity: layerOpacity, marker = 'arrow' }: ArrowsProps) {
   const p = pitchFor(tactic.format);
   const sw = Math.max(0.18, p.length / 320);
-  const opacity = faded ? 0.35 : 0.95;
+  const opacity = layerOpacity ?? (faded ? 0.35 : 0.95);
   const visible = new Set(activePlayers(tactic).map((x) => x.id));
   const a = step.ball;
   let ballLine: Vec[] | null = null;
@@ -142,7 +146,7 @@ function StepArrows({ tactic, step, before, after, r, colors, faded }: ArrowsPro
             strokeWidth={sw}
             strokeDasharray={dribbling ? `${sw * 0.6} ${sw * 2}` : `${sw * 4} ${sw * 2.5}`}
             strokeLinecap="round"
-            markerEnd={`url(#arrow-${dribbling ? 'ball' : pl.team})`}
+            markerEnd={`url(#${marker}-${dribbling ? 'ball' : pl.team})`}
           />
         );
       })}
@@ -153,7 +157,7 @@ function StepArrows({ tactic, step, before, after, r, colors, faded }: ArrowsPro
           stroke={ballKind === 'shot' ? '#ff6b6b' : '#ffffff'}
           strokeWidth={sw * 1.15}
           strokeLinecap="round"
-          markerEnd={`url(#arrow-${ballKind === 'shot' ? 'shot' : 'ball'})`}
+          markerEnd={`url(#${marker}-${ballKind === 'shot' ? 'shot' : 'ball'})`}
         />
       )}
     </g>
@@ -170,9 +174,11 @@ function curvedD(a: Vec, b: Vec): string {
 }
 
 function PlayerDisc({
-  pl, pos, r, color, selected, highlighted, ghost, hasBall, showLabel, onPointerDown,
+  pl, pos, r, color, selected, highlighted, ghost, shadow, hasBall, showLabel, onPointerDown,
 }: {
   pl: Player; pos: Vec; r: number; color: string; selected: boolean; highlighted: boolean; ghost?: boolean;
+  /** Blurred "shadow" of where the player was at the start of the previous step. */
+  shadow?: boolean;
   hasBall?: boolean; showLabel: boolean; onPointerDown?: (e: RPointerEvent) => void;
 }) {
   const gk = pl.line === 'GK';
@@ -181,7 +187,8 @@ function PlayerDisc({
   return (
     <g
       transform={`translate(${pos.x} ${pos.y})`}
-      opacity={ghost ? 0.3 : 1}
+      opacity={shadow ? 0.28 : ghost ? 0.3 : 1}
+      filter={shadow ? 'url(#prev-shadow)' : undefined}
       style={{ cursor: onPointerDown ? 'grab' : 'default' }}
       onPointerDown={onPointerDown}
       pointerEvents={ghost ? 'none' : undefined}
@@ -211,7 +218,7 @@ function contrastInk(hex: string): string {
 export function Pitch({ tactic, states, frame, stepIndex, interactive }: Props) {
   const p = pitchFor(tactic.format);
   const small = tactic.format <= 5;
-  const r = clamp(p.length * 0.0125 + 0.4, 0.9, 1.8);
+  const r = discRadius(p);
   const svgRef = useRef<SVGSVGElement>(null);
   const {
     tool, toolSource, selectedPlayer, highlight, settings,
@@ -379,6 +386,12 @@ export function Pitch({ tactic, states, frame, stepIndex, interactive }: Props) 
     }
   }
   const showGhosts = editing && settings.showGhosts && before;
+  // Previous step: where players were before it and the runs/passes that brought
+  // them to the start of this step, drawn as a blurred shadow layer.
+  const showPrev = editing && settings.showPrevStep !== false && stepIndex >= 1;
+  const prevStep = showPrev ? tactic.steps[stepIndex - 1] : undefined;
+  const prevBefore = showPrev ? states[stepIndex - 1] : undefined;
+  const prevAfter = showPrev ? states[stepIndex] : undefined;
 
   return (
     <svg
@@ -393,6 +406,14 @@ export function Pitch({ tactic, states, frame, stepIndex, interactive }: Props) 
       aria-label={`${tactic.format}v${tactic.format} tactics board`}
     >
       <defs>
+        <filter id="prev-shadow" x="-50%" y="-50%" width="200%" height="200%">
+          <feGaussianBlur stdDeviation={r * 0.18} />
+        </filter>
+        {(['home', 'away', 'ball', 'shot'] as const).map((k) => (
+          <marker key={`p-${k}`} id={`prev-${k}`} viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill={k === 'home' ? colors.home : k === 'away' ? colors.away : k === 'shot' ? '#ff6b6b' : '#ffffff'} />
+          </marker>
+        ))}
         {(['home', 'away', 'ball', 'shot'] as const).map((k) => (
           <marker key={k} id={`arrow-${k}`} viewBox="0 0 10 10" refX="7" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse">
             <path d="M 0 0 L 10 5 L 0 10 z" fill={k === 'home' ? colors.home : k === 'away' ? colors.away : k === 'shot' ? '#ff6b6b' : '#ffffff'} />
@@ -400,6 +421,17 @@ export function Pitch({ tactic, states, frame, stepIndex, interactive }: Props) 
         ))}
       </defs>
       <Field p={p} small={small} />
+
+      {prevStep && prevBefore && prevAfter && (
+        <g aria-label="Previous step">
+          {players.map((pl) =>
+            prevStep.moves[pl.id] && prevBefore.positions[pl.id] ? (
+              <PlayerDisc key={`ps-${pl.id}`} pl={pl} pos={prevBefore.positions[pl.id]} r={r} color={pl.team === 'home' ? colors.home : colors.away} selected={false} highlighted={false} shadow showLabel={false} />
+            ) : null,
+          )}
+          <StepArrows tactic={tactic} step={prevStep} before={prevBefore} after={prevAfter} r={r} colors={colors} opacity={0.3} marker="prev" />
+        </g>
+      )}
 
       {stepForArrows && arrowsBefore && arrowsAfter && (
         <StepArrows tactic={tactic} step={stepForArrows} before={arrowsBefore} after={arrowsAfter} r={r} colors={colors} faded={!!frame} />
