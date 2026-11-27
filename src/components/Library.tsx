@@ -54,7 +54,7 @@ export function Library({ onNew }: { onNew: () => void }) {
 
   return (
     <div>
-      <button className="primary" style={{ width: '100%' }} onClick={onNew}>+ New tactic</button>
+      <button className="primary" style={{ width: '100%' }} onClick={onNew} data-tour="new-tactic">+ New tactic</button>
       <div className="list-actions">
         <button onClick={duplicateCurrent} title="Save a copy of the open tactic">Duplicate</button>
         <button onClick={exportCurrent} title="Download the open tactic as a file to share">Export</button>

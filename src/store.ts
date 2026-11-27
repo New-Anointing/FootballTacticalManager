@@ -9,6 +9,8 @@ import { PRESET_TACTICS } from './presets/tactics';
 
 export type Tool = 'select' | 'run' | 'pass' | 'cross' | 'shot' | 'dribble' | 'clearance';
 export type PanelTab = 'edit' | 'analysis' | 'coach';
+/** On a phone only one pane shows at a time. */
+export type MobileView = 'library' | 'board' | 'panel';
 
 export interface Settings {
   homeColor: string;
@@ -30,6 +32,7 @@ interface State {
   toolSource?: string;
   tool: Tool;
   tab: PanelTab;
+  mobileView: MobileView;
   playing: boolean;
   /** True while the board shows the animation (playing or scrubbing) instead of the editor. */
   playbackView: boolean;
@@ -77,6 +80,7 @@ interface State {
   setToolSource: (id?: string) => void;
   selectPlayer: (id?: string) => void;
   setTab: (t: PanelTab) => void;
+  setMobileView: (v: MobileView) => void;
   setPlaying: (p: boolean) => void;
   setPlaybackView: (v: boolean) => void;
   setTime: (t: number) => void;
@@ -119,6 +123,7 @@ export const useStore = create<State>()(
         stepIndex: -1,
         tool: 'select',
         tab: 'edit',
+        mobileView: 'board',
         playing: false,
         playbackView: false,
         time: 0,
@@ -308,6 +313,7 @@ export const useStore = create<State>()(
         setToolSource: (toolSource) => set({ toolSource }),
         selectPlayer: (selectedPlayer) => set({ selectedPlayer }),
         setTab: (tab) => set({ tab }),
+        setMobileView: (mobileView) => set({ mobileView }),
         setPlaying: (playing) => set(playing ? { playing, playbackView: true } : { playing }),
         setPlaybackView: (playbackView) => set({ playbackView, playing: playbackView ? get().playing : false }),
         setTime: (time) => set({ time }),

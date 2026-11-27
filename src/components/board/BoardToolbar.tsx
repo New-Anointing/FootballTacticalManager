@@ -48,11 +48,11 @@ export function BoardToolbar({ onExport, compact = false }: { onExport?: () => v
   };
 
   return (
-    <div className="toolbar board-toolbar">
+    <div className="toolbar board-toolbar" data-tour="board-tools">
       {TOOLS.slice(0, 1).map((t) => (
         <button key={t.tool} className={tool === t.tool ? 'active' : ''} onClick={() => setTool(t.tool)} title={`${t.title} (${t.key})`}>{t.label}</button>
       ))}
-      <span className="seg" role="group" aria-label="Arrows">
+      <span className="seg" role="group" aria-label="Arrows" data-tour="board-arrows">
         {ARROWS.map((a) => (
           <button key={a.style} className={tool === 'arrow' && arrowStyle === a.style ? 'active' : ''} onClick={() => setArrowStyle(a.style)} title={`${a.title}. Drag from a player; curve it by drawing a curve (A)`}>
             {a.label}
@@ -65,6 +65,7 @@ export function BoardToolbar({ onExport, compact = false }: { onExport?: () => v
       <span className="sep" />
       {!compact && (
         <>
+          <span className="piece-group" data-tour="board-pieces">
           {pieces.map((pc) => (
             <button
               key={pc.label}
@@ -77,6 +78,7 @@ export function BoardToolbar({ onExport, compact = false }: { onExport?: () => v
               <Icon>{pc.icon}</Icon>{pc.label}
             </button>
           ))}
+          </span>
           <span className="sep" />
         </>
       )}
@@ -88,7 +90,7 @@ export function BoardToolbar({ onExport, compact = false }: { onExport?: () => v
       <span className="sep" />
       <button onClick={undo} disabled={!past.length} title="Undo (Ctrl+Z)">Undo</button>
       <button onClick={redo} disabled={!future.length} title="Redo (Ctrl+Shift+Z)">Redo</button>
-      {!compact && onExport && <button onClick={onExport} title="Save the board as an image to share">Export PNG</button>}
+      {!compact && onExport && <button onClick={onExport} title="Save the board as an image to share" data-tour="board-export">Export PNG</button>}
       {!presenting && <button onClick={() => setPresenting(true)} title="Full-screen board for the dressing room">Present</button>}
     </div>
   );

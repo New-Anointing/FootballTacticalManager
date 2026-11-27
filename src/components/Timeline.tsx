@@ -23,7 +23,7 @@ export function Timeline() {
 
   return (
     <div className="timeline">
-      <div className="steps">
+      <div className="steps" data-tour="steps">
         <button className={`step-chip ${stepIndex === -1 && !playbackView ? 'active' : ''}`} onClick={() => setStepIndex(-1)}>
           Setup<small>start</small>
         </button>
@@ -38,10 +38,10 @@ export function Timeline() {
             <small>{s.duration}s{s.ball ? ` · ${s.ball.type}` : ''}</small>
           </button>
         ))}
-        <button onClick={addStep} title="Add a step after the selected one">+ Step</button>
+        <button onClick={addStep} title="Add a step after the selected one" data-tour="add-step">+ Step</button>
       </div>
-      <div className="playback">
-        <button className="primary" onClick={play} disabled={!hasSteps} aria-label={playing ? 'Pause' : 'Play'}>
+      <div className="playback" data-tour="playback">
+        <button className="primary" onClick={play} disabled={!hasSteps} aria-label={playing ? 'Pause' : 'Play'} data-tour="play">
           {playing ? 'Pause' : 'Play'}
         </button>
         <button

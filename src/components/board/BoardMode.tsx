@@ -86,7 +86,7 @@ export function BoardMode({ mobile }: { mobile: 'library' | 'board' | 'panel' })
       </aside>
       <section className="center">
         <BoardToolbar onExport={exportPng} />
-        <div className="pitch-wrap board-wrap">
+        <div className="pitch-wrap board-wrap" data-tour="board-pitch">
           <BoardCanvas board={board} svgRef={svgRef} />
           {error && <div className="caption">{error}</div>}
         </div>

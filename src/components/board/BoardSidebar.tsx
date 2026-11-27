@@ -64,6 +64,7 @@ export function BoardSidebar() {
   const [format, setFormat] = useState(11);
   return (
     <div>
+      <div data-tour="board-list">
       <h2>Boards</h2>
       <div className="row tight" style={{ marginBottom: 8 }}>
         <select value={format} onChange={(e) => setFormat(parseInt(e.target.value, 10))} aria-label="Pitch for the new board" style={{ width: 'auto' }}>
@@ -88,8 +89,11 @@ export function BoardSidebar() {
           )}
         </div>
       ))}
-      <h2>Squad</h2>
-      <Squad />
+      </div>
+      <div data-tour="squad">
+        <h2>Squad</h2>
+        <Squad />
+      </div>
     </div>
   );
 }

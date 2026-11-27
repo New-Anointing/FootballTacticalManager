@@ -48,9 +48,9 @@ export function Toolbar() {
   const prevOn = settings.showPrevStep !== false;
   const active = TOOLS.find((t) => t.id === tool)!;
   return (
-    <div className="toolbar">
+    <div className="toolbar" data-tour="tools">
       {TOOLS.map((t) => (
-        <button key={t.id} className={tool === t.id ? 'active' : ''} onClick={() => setTool(t.id)} title={`${t.hint} (${t.key})`}>
+        <button key={t.id} className={tool === t.id ? 'active' : ''} onClick={() => setTool(t.id)} title={`${t.hint} (${t.key})`} data-tour={`tool-${t.id}`}>
           {t.label}
         </button>
       ))}
@@ -66,7 +66,7 @@ export function Toolbar() {
       <span className="sep" />
       <button onClick={undo} disabled={!past.length} title="Undo (Ctrl+Z)">Undo</button>
       <button onClick={redo} disabled={!future.length} title="Redo (Ctrl+Shift+Z)">Redo</button>
-      <button onClick={openOnBoard} title="Copy what's on screen onto a free tactics board, to move pieces and draw freely">Open on board</button>
+      <button onClick={openOnBoard} title="Copy what's on screen onto a free tactics board, to move pieces and draw freely" data-tour="open-on-board">Open on board</button>
       {tool === 'run' && toolSource && (
         <button className="ghost" onClick={() => setToolSource(undefined)}>Finish run</button>
       )}

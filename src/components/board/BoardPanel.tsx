@@ -184,6 +184,7 @@ export function BoardPanel({ onExport }: { onExport: () => void }) {
         </div>
       </div>
 
+      <div data-tour="line-up">
       <h2>Line up</h2>
       <p className="small muted" style={{ marginTop: 0 }}>Puts the first players of the squad into a formation. The rest stay on the bench.</p>
       <div className="row">
@@ -197,6 +198,7 @@ export function BoardPanel({ onExport }: { onExport: () => void }) {
           {formations.map((f) => <option key={f}>{f}</option>)}
         </select>
         <button style={{ flex: '0 0 auto' }} onClick={() => lineUpTeam('away', awayFormation)}>Line up {board.awayName || 'them'}</button>
+      </div>
       </div>
 
       <h2>Notes</h2>

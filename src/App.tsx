@@ -2,6 +2,9 @@ import { useEffect, useRef, useState } from 'react';
 import { useBoards, useCurrentBoard } from './boardStore';
 import { AnalysisPanel } from './components/AnalysisPanel';
 import { BoardMode } from './components/board/BoardMode';
+import { HelpDialog, WelcomeDialog } from './tutorial/HelpDialog';
+import { TourOverlay } from './tutorial/TourOverlay';
+import { useTour } from './tutorial/tourStore';
 import { CoachPanel } from './components/CoachPanel';
 import { EditPanel } from './components/EditPanel';
 import { Library } from './components/Library';
@@ -94,7 +97,9 @@ export default function App() {
   const changeBoard = useBoards((s) => s.change);
   const [showNew, setShowNew] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
-  const [mobile, setMobile] = useState<'library' | 'board' | 'panel'>('board');
+  const mobile = useStore((s) => s.mobileView);
+  const setMobile = useStore((s) => s.setMobileView);
+  const { welcomed, active: touring, helpOpen, setHelpOpen } = useTour();
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     try {
       return (localStorage.getItem('ftm-theme') as 'dark' | 'light') || 'dark';
@@ -123,7 +128,7 @@ export default function App() {
     <div className="app">
       <header className="topbar">
         <div className="brand"><span className="logo">⚽</span><span className="wide-brand">Tactical Manager</span></div>
-        <div className="mode-switch" role="tablist" aria-label="Mode">
+        <div className="mode-switch" role="tablist" aria-label="Mode" data-tour="mode-switch">
           <button role="tab" aria-selected={mode === 'tactics'} className={mode === 'tactics' ? 'active' : ''} onClick={() => setMode('tactics')} title="Animated tactics, step by step, with analysis">
             Tactics
           </button>
@@ -143,10 +148,14 @@ export default function App() {
         </div>
         <div className="actions">
           {mode === 'tactics' && (
-            <span className={`sev ${report.counts.error ? 'error' : report.counts.warning > 2 ? 'warning' : 'good'} wide`} style={{ alignSelf: 'center' }} title={report.verdict}>
+            <span
+              className={`sev ${report.counts.error ? 'error' : report.counts.warning > 2 ? 'warning' : 'good'} wide`} style={{ alignSelf: 'center' }}
+              title={report.verdict} data-tour="score"
+            >
               {report.score} · {report.grade}
             </span>
           )}
+          <button className="help-btn" onClick={() => setHelpOpen(true)} title="Help and tutorials" aria-label="Help and tutorials" data-tour="help">?</button>
           <button className="ghost" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} title="Toggle light / dark">{theme === 'dark' ? '☀' : '☾'}</button>
           <button onClick={() => setShowSettings(true)}>Settings</button>
         </div>
@@ -160,12 +169,12 @@ export default function App() {
         <BoardMode mobile={mobile} />
       ) : (
       <main className="main" data-mobile={mobile}>
-        <aside className="sidebar">
+        <aside className="sidebar" data-tour="library">
           <Library onNew={() => setShowNew(true)} />
         </aside>
         <section className="center">
           <Toolbar />
-          <div className="pitch-wrap">
+          <div className="pitch-wrap" data-tour="pitch">
             <Pitch tactic={current} states={states} frame={frame} stepIndex={frame ? frame.stepIndex : stepIndex} interactive={!frame} />
             {frame && playingStep?.note && (
               <div className="caption"><b>Step {frame.stepIndex + 1}</b>{playingStep.note}</div>
@@ -175,11 +184,11 @@ export default function App() {
         </section>
         <aside className="panel">
           <div className="tabs">
-            <button className={tab === 'edit' ? 'active' : ''} onClick={() => setTab('edit')}>Edit</button>
-            <button className={tab === 'analysis' ? 'active' : ''} onClick={() => setTab('analysis')}>
+            <button className={tab === 'edit' ? 'active' : ''} onClick={() => setTab('edit')} data-tour="tab-edit">Edit</button>
+            <button className={tab === 'analysis' ? 'active' : ''} onClick={() => setTab('analysis')} data-tour="tab-analysis">
               Analysis {report.counts.error ? `(${report.counts.error})` : ''}
             </button>
-            <button className={tab === 'coach' ? 'active' : ''} onClick={() => setTab('coach')}>Coach</button>
+            <button className={tab === 'coach' ? 'active' : ''} onClick={() => setTab('coach')} data-tour="tab-coach">Coach</button>
           </div>
           {tab === 'edit' && <EditPanel />}
           {tab === 'analysis' && <AnalysisPanel />}
@@ -190,6 +199,9 @@ export default function App() {
       {showNew && <NewTacticDialog onClose={() => { setShowNew(false); setMobile('board'); }} />}
       {showSettings && <SettingsDialog onClose={() => setShowSettings(false)} />}
       {presenting && mode === 'tactics' && <PresentView />}
+      {!welcomed && !touring && <WelcomeDialog />}
+      {helpOpen && <HelpDialog />}
+      <TourOverlay />
     </div>
   );
 }

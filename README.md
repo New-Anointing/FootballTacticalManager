@@ -44,6 +44,10 @@ A web app for coaches and managers to **design, animate and analyse football tac
   - Full pitch or either half, any format from 4v4 to 11v11; the layout turns vertical automatically on a phone held upright.
   - Several saved boards, undo/redo, **Export PNG** to share with players, and **Present** for a full-screen board you can still draw on.
   - **Open on board** (in the Tactics toolbar) copies the moment on screen, with its runs and pass, onto a new board.
+- **Tutorials.** First-time visitors get a welcome screen offering a short guided tour; the **?** button at the top replays any tour and lists the keyboard shortcuts. A spotlight walks through each part of the screen with Back / Next (or the arrow keys), and works on phones too.
+  - *Quick tour* (2 min): the whole app, from the library to the analysis, the assistant coach and the board.
+  - *Build your first tactic* (4 min, hands-on): it waits while you drag a player, add a step, draw a run and a pass, write a coaching note and press Play, then shows the analysis.
+  - *The tactics board* (2 min): pieces, arrows and drawing, squad and bench, line-ups, boards, export and present.
 - **Library.** Built-in tactics for every size of game, based on common coaching patterns and played against a defence that presses and tracks:
   - 4v4 wall pass and third-man run
   - futsal kick-off (ala isolation), futsal kick-in, and beating the press through the pivo
@@ -80,6 +84,7 @@ src/
     board/      the free tactics board: canvas, toolbar, squad/bench, properties, PNG export
   store.ts      Zustand store for animated tactics, with undo/redo, saved to localStorage
   boardStore.ts Zustand store for tactics boards (saved separately)
+  tutorial/     guided tours (tours.ts), spotlight overlay, welcome and help dialogs
 ```
 
 Coordinates are in metres. The home team (your team) always attacks to the right.
