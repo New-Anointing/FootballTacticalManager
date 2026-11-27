@@ -50,3 +50,20 @@ export function goalAngle(from: Vec, goalCentre: Vec, goalWidth: number): number
   if (d > Math.PI) d = 2 * Math.PI - d;
   return d;
 }
+
+/** The first fraction `f` (by distance) of a polyline. */
+export function cutPath(path: Vec[], f: number): Vec[] {
+  const total = pathLength(path);
+  let left = total * f;
+  const out = [path[0]];
+  for (let i = 1; i < path.length; i++) {
+    const seg = dist(path[i - 1], path[i]);
+    if (left <= seg) {
+      out.push(pointAlong([path[i - 1], path[i]], seg === 0 ? 0 : left / seg));
+      return out;
+    }
+    out.push(path[i]);
+    left -= seg;
+  }
+  return out;
+}

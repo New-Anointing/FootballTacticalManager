@@ -11,14 +11,16 @@ A web app for coaches and managers to **design, animate and analyse football tac
   - A coaching note and an **expected outcome** per step (keep the ball, progress, switch play, create a chance, score, win it back, clear).
   - **Previous-step shadow**: while editing step 2 onwards, the previous step's players and arrows are shown as a blurred shadow, so you can see where everyone came from. Toggle it with the **Prev step** button, the `H` key or in Settings.
   - Undo/redo and keyboard shortcuts (`V R P C D S L` tools, `Space` play, `←/→` steps, `H` shadow, `Ctrl+Z`).
-- **Animation.** Play the tactic back with eased runs, timed passes and lofted crosses; scrub, change speed and loop. **Present** mode shows a full-screen view with captions for players.
+- **Animation.** Play the tactic back with timed passes and lofted crosses; scrub, change speed and loop. **Present** mode shows a full-screen view with captions for players.
+  - **Realistic motion**: players accelerate from a standstill (about 10 m in 1.8 s), keep their speed when a run carries on into the next step, arrive at pace and pull up, or set off early to time a run. They only slow down to stop or turn, so the team flows instead of stopping together at every step. In open play the clip starts with players already moving; at set pieces they start from a standstill.
 - **Realistic players.** Script only the key runs; the engines move everyone else like a real team:
   - **Team defending** (*Make opponents react*): one player presses the ball, approaching from the inside to show the carrier down the line and only once the pass is played. One more blocks the most dangerous passing lane. The rest hold a compact zonal shape that slides, steps up and drops with the ball, and runners are tracked a metre or two goal-side. Nobody but the presser crowds the ball, and the back line holds the edge of the box until the ball gets there. At set pieces near their own goal (corners, wide free kicks, kick-ins), the box defence holds its zones, markers stay with their men and the keeper covers the near post without leaving the goal mouth.
   - **Team support** (*Move my team with the play*): the team on the ball moves as a unit. The back line pushes up behind the ball as rest defence, full-backs and midfielders support, the far side tucks in, runners attack the near post, far post, penalty spot and cutback zone when the ball goes wide, and the keeper sweeps behind a high line.
   - Both work for either side, so the same engines defend your team when the opponent has the ball. Scripted runs are never changed.
   - Players run round each other, not through each other: a final pass bends any engine run that would cross an opponent or team-mate mid-step, without crowding the ball or doubling up on an attacker.
+  - Nobody the engines move sprints faster than a footballer can from the speed they're carrying: a defender who was standing still reacts and gets as far as they really could.
 - **Analysis mode.** A rule engine replays every step and judges the tactic:
-  - realistic running, dribbling and pass speeds
+  - realistic running, dribbling and pass speeds, judged on each run as it is actually played (a run from a standing start needs more time than one already at full speed); the fix offers the step length that makes it possible
   - passing lanes checked against *moving* defenders (interceptions and risky lanes)
   - offside at the moment the ball is played
   - pressure on receivers and dribbles into defenders
@@ -63,7 +65,8 @@ src/
   model/        data types, pitch dimensions, formations, board-state simulation
   engine/       animation, geometry, passing options and xG, analysis, assistant coach,
                 team defending (defence.ts), team support (support.ts), both together
-                step by step (teams.ts) and run de-confliction (deconflict.ts)
+                step by step (teams.ts), run de-confliction (deconflict.ts) and
+                player motion: acceleration, carried speed and braking (motion.ts)
   presets/      built-in tactics (written in pitch fractions so they scale to any pitch)
   ai/           optional Claude coach (loaded only when used)
   components/   React UI: pitch (SVG), toolbar, timeline, panels, dialogs

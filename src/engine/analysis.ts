@@ -3,6 +3,7 @@ import { activePlayers, boardStates, playerById, playerLabel, type BoardState } 
 import type { Player, Step, Tactic, TeamSide, Vec } from '../model/types';
 import { ballFlight, frameAtStep, playerPath } from './animation';
 import { PRESS_SPEED, pressGap } from './defence';
+import { carryFor, runPeakSpeed, type Carry } from './motion';
 import { maxBackLine } from './support';
 import { dist, lerp, pathLength } from './geometry';
 import { isOffside, opponentsOf, passOptions, scaleFor, shotXg, teammatesOf } from './options';
@@ -47,10 +48,10 @@ export interface AnalysisReport {
   counts: Record<Severity, number>;
 }
 
-const MAX_SPRINT = 9.5; // m/s, elite top speed
-const HARD_SPRINT = 7.5;
+const MAX_SPRINT = 10; // m/s, faster than any footballer runs
+const HARD_SPRINT = 8.6; // m/s (31 km/h), a flat-out sprint
 const MAX_PASS_SPEED = 32; // m/s, a driven pass
-const MAX_DRIBBLE = 7; // m/s, top speed with the ball
+const MAX_DRIBBLE = 7.5; // m/s, top speed with the ball
 const REACT = 1.2; // m an opponent can stretch to reach the ball
 
 let seq = 0;
@@ -109,7 +110,7 @@ export function analyseTactic(t: Tactic): AnalysisReport {
       playerById(t, step.ball?.from)?.team ?? playerById(t, before.ballOwner)?.team;
     const m: StepMetrics = { stepIndex: i, possession, width: 0, depth: 0 };
 
-    checkMovement(t, step, i, before, findings, p);
+    checkMovement(t, step, i, states, findings, p);
     if (possession === 'home' && t.showOpponents) checkOpponentRealism(t, step, i, states, findings);
     if (possession === 'home') checkTeamSupport(t, step, i, states, findings);
     if (step.ball) checkBallAction(t, step, i, states, findings, m);
@@ -412,38 +413,55 @@ function checkTeamSupport(t: Tactic, step: Step, i: number, states: BoardState[]
   }
 }
 
+/** Shortest step (s, to 0.1) in which a run of `len` m peaks no faster than `top` m/s. */
+function durationFor(len: number, carry: Carry | undefined, top: number): number {
+  let lo = 0.1;
+  let hi = 30;
+  for (let k = 0; k < 40; k++) {
+    const mid = (lo + hi) / 2;
+    if (runPeakSpeed(len, mid, carry) > top) lo = mid;
+    else hi = mid;
+  }
+  return Math.ceil(hi * 10) / 10;
+}
+
 function checkMovement(
-  t: Tactic, step: Step, i: number, before: BoardState, findings: Finding[], p: ReturnType<typeof pitchFor>,
+  t: Tactic, step: Step, i: number, states: BoardState[], findings: Finding[], p: ReturnType<typeof pitchFor>,
 ) {
+  const before = states[i];
+  // Speeds are judged on the run as it is played: players carry speed in and out of
+  // steps, but from a standstill they need time to get going.
+  const carry = carryFor(t, states, i);
   for (const [id, moves] of Object.entries(step.moves)) {
     const pl = playerById(t, id);
     const start = before.positions[id];
     if (!pl || !start || !moves.length) continue;
     if (pl.team === 'away' && !t.showOpponents) continue;
     const len = pathLength(playerPath(step, id, start));
-    const speed = len / Math.max(0.1, step.duration);
-    const needed = Math.ceil((len / HARD_SPRINT) * 10) / 10;
+    const speed = runPeakSpeed(len, step.duration, carry[id]);
+    const fromRest = (carry[id]?.v0 ?? 0) === 0;
+    const needed = durationFor(len, carry[id], HARD_SPRINT);
     // With the ball at their feet nobody runs at full sprint speed.
     if (step.ball?.type === 'dribble' && step.ball.from === id && speed > MAX_DRIBBLE && speed <= MAX_SPRINT) {
       findings.push({
         id: fid(), severity: 'warning', category: 'movement', stepIndex: i, players: [id],
         title: `${playerLabel(pl)} dribbles at ${speed.toFixed(1)} m/s`,
         detail: `That is faster than anyone can run with the ball (about ${MAX_DRIBBLE} m/s). Shorten the carry or give the step more time.`,
-        fix: { kind: 'extend-duration', stepIndex: i, duration: Math.ceil((len / (MAX_DRIBBLE - 0.5)) * 10) / 10 },
+        fix: { kind: 'extend-duration', stepIndex: i, duration: durationFor(len, carry[id], MAX_DRIBBLE - 0.3) },
       });
     }
     if (speed > MAX_SPRINT) {
       findings.push({
         id: fid(), severity: 'error', category: 'movement', stepIndex: i, players: [id],
         title: `${playerLabel(pl)} would need ${speed.toFixed(1)} m/s`,
-        detail: `Covering ${len.toFixed(0)} m in ${step.duration}s is faster than any footballer can run. Shorten the run or give the step at least ${needed}s.`,
+        detail: `Covering ${len.toFixed(0)} m in ${step.duration}s${fromRest ? ' from a standing start' : ''} is faster than any footballer can run. Shorten the run or give the step at least ${needed}s.`,
         fix: { kind: 'extend-duration', stepIndex: i, duration: needed },
       });
     } else if (speed > HARD_SPRINT) {
       findings.push({
         id: fid(), severity: 'warning', category: 'movement', stepIndex: i, players: [id],
         title: `${playerLabel(pl)} is flat-out sprinting`,
-        detail: `${speed.toFixed(1)} m/s over ${len.toFixed(0)} m is possible but hard to repeat. Consider a longer step.`,
+        detail: `Reaching ${speed.toFixed(1)} m/s over ${len.toFixed(0)} m${fromRest ? ' from a standing start' : ''} is possible but hard to repeat. Consider a longer step.`,
         fix: { kind: 'extend-duration', stepIndex: i, duration: needed },
       });
     }
@@ -545,7 +563,7 @@ function checkBallAction(
   const receiver = playerById(t, a.to);
   /** A pass aimed at an opposing player is an interception / turnover by design. */
   const turnover = !!receiver && receiver.team !== from.team;
-  const fl = ballFlight(t, step, before, after)!;
+  const fl = ballFlight(t, step, before, after, carryFor(t, states, i))!;
   const dest: Vec = fl.dest;
   const length = dist(origin, dest);
   m.passDistance = length;

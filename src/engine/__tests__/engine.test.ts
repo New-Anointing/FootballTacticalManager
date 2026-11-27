@@ -289,6 +289,57 @@ describe('whole-team movement', () => {
   });
 });
 
+describe('player motion', () => {
+  it('keeps a run going through a step boundary instead of stopping dead', () => {
+    const t = createTactic({ format: 11 });
+    t.initial.h9 = { x: 60, y: 34 };
+    for (const x of [72, 84]) {
+      const s = newStep();
+      s.duration = 2;
+      s.moves = { h9: [{ x, y: 34 }] };
+      t.steps.push(s);
+    }
+    const states = boardStates(t);
+    const speedAt = (time: number) => {
+      const a = frameAtTime(t, time - 0.05, states).positions.h9;
+      const b = frameAtTime(t, time + 0.05, states).positions.h9;
+      return Math.hypot(b.x - a.x, b.y - a.y) / 0.1;
+    };
+    // Open play: already running at 6 m/s, straight through the end of step 1.
+    expect(speedAt(2)).toBeGreaterThan(5.5);
+    expect(speedAt(1)).toBeLessThan(6.5);
+  });
+
+  it('takes time to get going from a standstill', () => {
+    const t = createTactic({ format: 11, phase: 'set-piece' });
+    t.initial.h9 = { x: 60, y: 34 };
+    const s = newStep();
+    s.duration = 3;
+    s.moves = { h9: [{ x: 80, y: 34 }] }; // 20 m from a standing start at a set piece
+    t.steps.push(s);
+    const states = boardStates(t);
+    const at = (time: number) => frameAtTime(t, time, states).positions.h9.x - 60;
+    expect(at(0.5)).toBeLessThan(1.5);
+    expect(at(3)).toBeCloseTo(20, 5);
+  });
+
+  it('never asks a preset player to run faster than a footballer can', () => {
+    for (const t of PRESET_TACTICS) {
+      const states = boardStates(t);
+      const total = t.steps.reduce((sum, s) => sum + s.duration, 0);
+      let prev = frameAtTime(t, 0, states).positions;
+      for (let time = 0.05; time <= total; time += 0.05) {
+        const cur = frameAtTime(t, time, states).positions;
+        for (const id of Object.keys(cur)) {
+          const v = Math.hypot(cur[id].x - prev[id].x, cur[id].y - prev[id].y) / 0.05;
+          expect(v, `${t.name} ${id} at ${time.toFixed(2)}s`).toBeLessThan(9.5);
+        }
+        prev = cur;
+      }
+    }
+  });
+});
+
 describe('laws of the game in set pieces', () => {
   it('flags an opponent inside the restart distance', () => {
     const t = createTactic({ format: 11, phase: 'set-piece' });

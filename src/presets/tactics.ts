@@ -36,14 +36,14 @@ export const PRESET_SPECS: PresetSpec[] = [
         ball: { type: 'pass', from: 'h1', to: 'h3', at: 0.15 },
       },
       {
-        d: 1.2, note: 'Wall pass: a quick lay-off to the ala, who arrives inside facing forward.', outcome: 'retain',
+        d: 1.6, note: 'Wall pass: a quick lay-off to the ala, who arrives inside facing forward.', outcome: 'retain',
         moves: { h2: [0.65, 0.38], h1: [0.36, 0.82] },
-        ball: { type: 'pass', from: 'h3', to: 'h2', at: 0.4 },
+        ball: { type: 'pass', from: 'h3', to: 'h2', at: 0.7 },
       },
       {
-        d: 1.5, note: 'The high player spins in behind; the ala plays it straight back into the run.', outcome: 'chance',
+        d: 2.2, note: 'The high player spins in behind; the ala plays it straight back into the run.', outcome: 'chance',
         moves: { h3: [0.89, 0.73] },
-        ball: { type: 'pass', from: 'h2', to: 'h3', at: 0.4 },
+        ball: { type: 'pass', from: 'h2', to: 'h3', at: 0.5 },
       },
       {
         d: 0.8, note: 'Takes it on and finishes across the keeper.', outcome: 'goal',
@@ -63,7 +63,7 @@ export const PRESET_SPECS: PresetSpec[] = [
     },
     steps: [
       {
-        d: 1.3, note: 'The pivo plays back to the fixo. The pivo and left ala move away to the left, clearing the right side.', outcome: 'retain',
+        d: 1.5, note: 'The pivo plays back to the fixo. The pivo and left ala move away to the left, clearing the right side.', outcome: 'retain',
         moves: { h4: [0.62, 0.3], h2: [0.46, 0.14], h3: [0.5, 0.9] },
         ball: { type: 'pass', from: 'h4', to: 'h1', at: 0.1 },
       },
@@ -73,12 +73,12 @@ export const PRESET_SPECS: PresetSpec[] = [
         ball: { type: 'pass', from: 'h1', to: 'h3', at: 0.15 },
       },
       {
-        d: 2.7, note: 'The ala attacks the defender 1v1 and cuts inside onto the stronger foot.', outcome: 'chance',
+        d: 3.3, note: 'The ala attacks the defender 1v1 and cuts inside onto the stronger foot.', outcome: 'chance',
         moves: { h3: [0.86, 0.7], h4: [0.8, 0.3] },
         ball: { type: 'dribble', from: 'h3' },
       },
       {
-        d: 1.4, note: 'Shot to the far post, with the pivo following in for any rebound.', outcome: 'goal',
+        d: 1.2, note: 'Shot to the far post, with the pivo following in for any rebound.', outcome: 'goal',
         moves: { h4: [0.9, 0.4], h3: [0.97, 0.67] },
         ball: { type: 'shot', from: 'h3', target: [1, 0.42], at: 0.7 },
       },
@@ -111,8 +111,8 @@ export const PRESET_SPECS: PresetSpec[] = [
       },
       {
         d: 0.8, note: 'Takes a touch forward, past the defender who comes across, and shoots across the keeper into the far corner.', outcome: 'goal',
-        moves: { h3: [0.912, 0.625] },
-        ball: { type: 'shot', from: 'h3', target: [1, 0.45], at: 0.6 },
+        moves: { h3: [0.912, 0.595] },
+        ball: { type: 'shot', from: 'h3', target: [1, 0.45], at: 0.7 },
       },
     ],
   },
@@ -134,26 +134,26 @@ export const PRESET_SPECS: PresetSpec[] = [
       {
         d: 1.6, note: 'Down the line into the pivo, who has come short and wide.', outcome: 'progress',
         moves: { h4: [0.48, 0.83], h2: [0.34, 0.55] },
-        ball: { type: 'pass', from: 'h3', to: 'h4', at: 0.2 },
+        ball: { type: 'pass', from: 'h3', to: 'h4', at: 0.3 },
       },
       {
-        d: 1.6, note: 'The pivo shields and lays it off to the fixo, arriving facing forward.', outcome: 'retain',
+        d: 2.2, note: 'The pivo shields and lays it off to the fixo, arriving facing forward.', outcome: 'retain',
         moves: { h2: [0.42, 0.6], h1: [0.5, 0.15] },
         ball: { type: 'pass', from: 'h4', to: 'h2', at: 0.3 },
       },
       {
-        d: 2.7, note: 'The fixo carries forward, then switches play to the left ala running in behind.', outcome: 'progress',
+        d: 3.3, note: 'The fixo carries forward, then switches play to the left ala running in behind.', outcome: 'progress',
         moves: { h1: [0.76, 0.29], h4: [0.66, 0.78] },
-        ball: { type: 'pass', from: 'h2', to: 'h1', at: 0.5 },
+        ball: { type: 'pass', from: 'h2', to: 'h1', at: 0.7 },
       },
       {
-        d: 1.7, note: 'Square ball across the area to the pivo at the back post.', outcome: 'chance',
+        d: 2.3, note: 'Square ball across the area to the pivo at the back post.', outcome: 'chance',
         moves: { h4: [0.88, 0.56], h1: [0.86, 0.26] },
         ball: { type: 'pass', from: 'h1', to: 'h4', at: 0.5 },
       },
       {
         d: 1.1, note: 'Finish at the back post.', outcome: 'goal',
-        ball: { type: 'shot', from: 'h4', target: [1, 0.42], at: 0.6 },
+        ball: { type: 'shot', from: 'h4', target: [1, 0.42], at: 0.7 },
       },
     ],
   },
@@ -169,7 +169,7 @@ export const PRESET_SPECS: PresetSpec[] = [
         ball: { type: 'pass', from: 'h1', to: 'h3', at: 0.3 },
       },
       {
-        d: 1.8, note: 'Up: midfielder plays up to the striker, who drops in.', outcome: 'progress',
+        d: 2.1, note: 'Up: midfielder plays up to the striker, who drops in.', outcome: 'progress',
         moves: { h4: [0.52, 0.35], h5: [0.62, 0.78] },
         ball: { type: 'pass', from: 'h3', to: 'h4', at: 0.3 },
       },
@@ -179,7 +179,7 @@ export const PRESET_SPECS: PresetSpec[] = [
         ball: { type: 'pass', from: 'h4', to: 'h3', at: 0.3 },
       },
       {
-        d: 2, note: 'Through: ball in behind for the far striker.', outcome: 'chance',
+        d: 2.3, note: 'Through: ball in behind for the far striker.', outcome: 'chance',
         moves: { h5: [0.88, 0.52] },
         ball: { type: 'pass', from: 'h3', to: 'h5', at: 0.35 },
       },
@@ -215,7 +215,7 @@ export const PRESET_SPECS: PresetSpec[] = [
         ball: { type: 'pass', from: 'h5', to: 'h2', at: 0.2 },
       },
       {
-        d: 1.9, note: 'Carry to the byline while the striker attacks the near post and the 6 arrives late.', outcome: 'progress',
+        d: 2.1, note: 'Carry to the byline while the striker attacks the near post and the 6 arrives late.', outcome: 'progress',
         moves: { h2: [0.92, 0.72], h6: [0.92, 0.46], h4: [0.8, 0.56] },
         ball: { type: 'dribble', from: 'h2' },
       },
@@ -225,8 +225,8 @@ export const PRESET_SPECS: PresetSpec[] = [
         ball: { type: 'pass', from: 'h2', to: 'h4', at: 0.4 },
       },
       {
-        d: 1, note: 'The 6 takes it in stride and finishes low.', outcome: 'goal',
-        moves: { h4: [0.89, 0.4] },
+        d: 1.3, note: 'The 6 takes it in stride and finishes low.', outcome: 'goal',
+        moves: { h4: [0.92, 0.4] },
         ball: { type: 'shot', from: 'h4', target: [1, 0.44], at: 0.7 },
       },
     ],
@@ -243,29 +243,29 @@ export const PRESET_SPECS: PresetSpec[] = [
     },
     steps: [
       {
-        d: 2, note: 'Left winger, under pressure, plays inside to the left midfielder.', outcome: 'retain',
+        d: 1.8, note: 'Left winger, under pressure, plays inside to the left midfielder.', outcome: 'retain',
         moves: { h4: [0.48, 0.33] },
-        ball: { type: 'pass', from: 'h6', to: 'h4', at: 0.6 },
+        ball: { type: 'pass', from: 'h6', to: 'h4', at: 0.7 },
       },
       {
-        d: 2.1, note: 'Sideways to the right midfielder, after a touch to draw the presser.', outcome: 'retain',
+        d: 2.9, note: 'Sideways to the right midfielder, after a touch to draw the presser.', outcome: 'retain',
         moves: { h5: [0.66, 0.46] },
-        ball: { type: 'pass', from: 'h4', to: 'h5', at: 0.5 },
+        ball: { type: 'pass', from: 'h4', to: 'h5', at: 0.7 },
       },
       {
         d: 2.5, note: 'Switch: long diagonal to the right winger, who is 1v1 with lots of space.', outcome: 'progress',
-        moves: { h6: [0.72, 0.14], h8: [0.8, 0.78] },
-        ball: { type: 'pass', from: 'h5', to: 'h8', at: 0.6 },
+        moves: { h6: [0.72, 0.14], h8: [0.8, 0.81] },
+        ball: { type: 'pass', from: 'h5', to: 'h8', at: 0.4 },
       },
       {
-        d: 2.5, note: 'Winger attacks the full-back; striker and far winger attack the box.', outcome: 'progress',
+        d: 2.9, note: 'Winger attacks the full-back; striker and far winger attack the box.', outcome: 'progress',
         moves: { h8: [0.89, 0.97], h7: [0.87, 0.62], h6: [[0.8, 0.2], [0.87, 0.36]] },
         ball: { type: 'dribble', from: 'h8' },
       },
       {
-        d: 2.3, note: 'Cross to the back post.', outcome: 'chance',
+        d: 2.1, note: 'Cross to the back post.', outcome: 'chance',
         moves: { h6: [0.84, 0.54] },
-        ball: { type: 'cross', from: 'h8', to: 'h6', at: 0.3 },
+        ball: { type: 'cross', from: 'h8', to: 'h6', at: 0.4 },
       },
       {
         d: 1.9, note: 'Finish at the back post.', outcome: 'goal',
@@ -296,14 +296,14 @@ export const PRESET_SPECS: PresetSpec[] = [
         ball: { type: 'pass', from: 'h6', to: 'h3', at: 0.2 },
       },
       {
-        d: 3.1, note: 'The free centre-back carries into midfield, drawing a midfielder out of their line.', outcome: 'progress',
+        d: 4.1, note: 'The free centre-back carries into midfield, drawing a midfielder out of their line.', outcome: 'progress',
         moves: { h3: [0.33, 0.71], h7: [0.46, 0.62] },
         ball: { type: 'dribble', from: 'h3' },
       },
       {
         d: 3.4, note: 'The centre-back finds the 10 in the space between their lines, on the half-turn.', outcome: 'progress',
         moves: { h7: [0.48, 0.6], h10: [0.6, 0.94] },
-        ball: { type: 'pass', from: 'h3', to: 'h7', at: 0.4 },
+        ball: { type: 'pass', from: 'h3', to: 'h7', at: 0.5 },
       },
       {
         d: 3.1, note: 'The 10 releases the right winger, 1v1 against the full-back.', outcome: 'progress',
@@ -311,19 +311,19 @@ export const PRESET_SPECS: PresetSpec[] = [
         ball: { type: 'pass', from: 'h7', to: 'h10', at: 0.6 },
       },
       {
-        d: 3, note: 'The winger drives to the byline; the striker attacks the near post and the left winger the far post.', outcome: 'progress',
+        d: 3.4, note: 'The winger drives to the byline; the striker attacks the near post and the left winger the far post.', outcome: 'progress',
         moves: { h10: [0.9, 0.82], h9: [0.9, 0.48], h8: [0.86, 0.3] },
         ball: { type: 'dribble', from: 'h10' },
       },
       {
         d: 2.2, note: 'Low cross into the six-yard area.', outcome: 'chance',
         moves: { h9: [0.94, 0.62] },
-        ball: { type: 'pass', from: 'h10', to: 'h9', at: 0.6 },
+        ball: { type: 'pass', from: 'h10', to: 'h9', at: 0.4 },
       },
       {
-        d: 1.4, note: 'Finish.', outcome: 'goal',
+        d: 1.5, note: 'Finish.', outcome: 'goal',
         moves: { h9: [0.91, 0.62] },
-        ball: { type: 'shot', from: 'h9', target: [1, 0.46], at: 0.3 },
+        ball: { type: 'shot', from: 'h9', target: [1, 0.46], at: 0.4 },
       },
     ],
   },
@@ -350,13 +350,13 @@ export const PRESET_SPECS: PresetSpec[] = [
         ball: { type: 'dribble', from: 'h10' },
       },
       {
-        d: 3.1, note: 'With the centre-back drawn across, the ball goes across to the strike partner.', outcome: 'chance',
+        d: 3.4, note: 'With the centre-back drawn across, the ball goes across to the strike partner.', outcome: 'chance',
         moves: { h9: [0.86, 0.55] },
         ball: { type: 'pass', from: 'h10', to: 'h9', at: 0.5 },
       },
       {
         d: 1.2, note: 'Takes a touch and finishes into the far corner.', outcome: 'goal',
-        moves: { h9: [0.89, 0.55] },
+        moves: { h9: [0.92, 0.58] },
         ball: { type: 'shot', from: 'h9', target: [1, 0.44], at: 0.5 },
       },
     ],
@@ -384,7 +384,7 @@ export const PRESET_SPECS: PresetSpec[] = [
         ball: { type: 'pass', from: 'a3', to: 'a4', at: 0.25 },
       },
       {
-        d: 2.4, note: 'Trapped: the full-back tries the line and the left-back steps in to intercept.', outcome: 'regain',
+        d: 3, note: 'Trapped: the full-back tries the line and the left-back steps in to intercept.', outcome: 'regain',
         moves: { h1: [0.73, 0.08], h8: [0.76, 0.12] },
         ball: { type: 'pass', from: 'a4', to: 'h1', at: 0.45 },
       },
@@ -413,7 +413,7 @@ export const PRESET_SPECS: PresetSpec[] = [
         ball: { type: 'pass', from: 'h7', to: 'h5', at: 0.35 },
       },
       {
-        d: 3, note: 'The 6 carries inside along the byline, with the defender jockeying goal-side, and the taker follows round the outside as a second option. The zonal defenders drop to protect the near post.', outcome: 'retain',
+        d: 3.8, note: 'The 6 carries inside along the byline, with the defender jockeying goal-side, and the taker follows round the outside as a second option. The zonal defenders drop to protect the near post.', outcome: 'retain',
         moves: { h5: [0.986, 0.324], h7: [0.971, 0.071], h9: [0.914, 0.551], h3: [0.929, 0.647], h10: [0.895, 0.765], h6: [0.829, 0.588], h8: [0.833, 0.353] },
         ball: { type: 'dribble', from: 'h5' },
       },

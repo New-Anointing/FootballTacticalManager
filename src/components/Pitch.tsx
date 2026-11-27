@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
 import { ballFlight, playerAt, type Frame } from '../engine/animation';
 import { clamp, dist } from '../engine/geometry';
+import { carryFor, type StepCarry } from '../engine/motion';
 import { attackingGoal, discRadius, pitchFor, type PitchSpec } from '../model/pitch';
 import { activePlayers, playerById, type BoardState } from '../model/tactic';
 import type { Player, Step, Tactic, Vec } from '../model/types';
@@ -101,9 +102,11 @@ interface ArrowsProps {
   opacity?: number;
   /** Prefix for marker ids so a layer can use its own (dimmer) arrowheads. */
   marker?: string;
+  /** Speeds the players carry into and out of this step (where the ball is released from). */
+  carry?: StepCarry;
 }
 
-function StepArrows({ tactic, step, before, after, r, colors, faded, opacity: layerOpacity, marker = 'arrow' }: ArrowsProps) {
+function StepArrows({ tactic, step, before, after, r, colors, faded, opacity: layerOpacity, marker = 'arrow', carry = {} }: ArrowsProps) {
   const p = pitchFor(tactic.format);
   const sw = Math.max(0.18, p.length / 320);
   const opacity = layerOpacity ?? (faded ? 0.35 : 0.95);
@@ -112,8 +115,8 @@ function StepArrows({ tactic, step, before, after, r, colors, faded, opacity: la
   let ballLine: Vec[] | null = null;
   let ballKind: 'pass' | 'shot' | 'dribble' | 'cross' = 'pass';
   if (a && before.positions[a.from]) {
-    const origin = playerAt(step, a.from, before.positions[a.from], a.releaseAt);
-    const flight = ballFlight(tactic, step, before, after);
+    const origin = playerAt(step, a.from, before.positions[a.from], a.releaseAt, carry[a.from]);
+    const flight = ballFlight(tactic, step, before, after, carry);
     if ((a.type === 'pass' || a.type === 'cross') && a.to && after.positions[a.to] && flight) {
       // Arrow to where the ball meets the receiver (they may carry it on from there).
       ballLine = [flight.origin, flight.dest];
@@ -429,12 +432,15 @@ export function Pitch({ tactic, states, frame, stepIndex, interactive }: Props) 
               <PlayerDisc key={`ps-${pl.id}`} pl={pl} pos={prevBefore.positions[pl.id]} r={r} color={pl.team === 'home' ? colors.home : colors.away} selected={false} highlighted={false} shadow showLabel={false} />
             ) : null,
           )}
-          <StepArrows tactic={tactic} step={prevStep} before={prevBefore} after={prevAfter} r={r} colors={colors} opacity={0.3} marker="prev" />
+          <StepArrows tactic={tactic} step={prevStep} before={prevBefore} after={prevAfter} r={r} colors={colors} opacity={0.3} marker="prev" carry={carryFor(tactic, states, stepIndex - 1)} />
         </g>
       )}
 
       {stepForArrows && arrowsBefore && arrowsAfter && (
-        <StepArrows tactic={tactic} step={stepForArrows} before={arrowsBefore} after={arrowsAfter} r={r} colors={colors} faded={!!frame} />
+        <StepArrows
+          tactic={tactic} step={stepForArrows} before={arrowsBefore} after={arrowsAfter} r={r} colors={colors} faded={!!frame}
+          carry={carryFor(tactic, states, frame ? frame.stepIndex : stepIndex)}
+        />
       )}
 
       {showGhosts &&

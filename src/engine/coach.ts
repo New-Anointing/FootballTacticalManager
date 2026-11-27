@@ -4,7 +4,8 @@ import { boardStates, playerById, playerLabel, uid } from '../model/tactic';
 import type { Step, Tactic, TeamSide, Vec } from '../model/types';
 import { analyseTactic, type AnalysisReport, type Finding } from './analysis';
 import { reactStep } from './defence';
-import { clamp, dist, lerp } from './geometry';
+import { clamp, dist, lerp, pathLength } from './geometry';
+import { AT_REST, capRun, runPeakSpeed, SPRINT } from './motion';
 import { isOffside, laneClearance, opponentsOf, passOptions, scaleFor, shotXg, teammatesOf } from './options';
 
 // ---------------------------------------------------------------------------
@@ -126,13 +127,21 @@ function fromProgress(side: TeamSide, prog: number, y: number, t: Tactic): Vec {
   return { x: side === 'home' ? prog * p.length : (1 - prog) * p.length, y };
 }
 
+/**
+ * Step length (to the half second) that lets every run be made realistically: even
+ * from a standing start and pulling up at the end, nobody needs more than a hard sprint.
+ */
 function durationFor(moves: Record<string, Vec[]>, positions: Record<string, Vec>, minimum = 1.5): number {
-  let longest = 0;
+  let need = minimum;
   for (const [id, path] of Object.entries(moves)) {
     const start = positions[id];
-    if (start && path.length) longest = Math.max(longest, dist(start, path[path.length - 1]));
+    if (!start || !path.length) continue;
+    const len = pathLength([start, ...path]);
+    let d = need;
+    while (d < 12 && runPeakSpeed(len, d, AT_REST) > SPRINT + 0.4) d += 0.5;
+    need = Math.max(need, d);
   }
-  return Math.max(minimum, Math.ceil((longest / 6) * 2) / 2);
+  return need;
 }
 
 /**
@@ -379,7 +388,14 @@ export function generateAttack(t: Tactic, maxSteps = 10): GeneratedMove {
       if (!t.showOpponents) return st;
       const homeOnly = Object.fromEntries(Object.entries(st.moves).filter(([id]) => playerById(t, id)?.team === 'home'));
       const s2: Step = { ...st, moves: homeOnly };
-      s2.moves = { ...homeOnly, ...reactStep(t, beforeState, s2) };
+      const reaction = reactStep(t, beforeState, s2);
+      // Defenders can only get as far as they could really run in the time, from a standstill.
+      for (const [id, path] of Object.entries(reaction)) {
+        const cut = capRun([positions[id], ...path], s2.duration, AT_REST);
+        if (cut.length) reaction[id] = cut;
+        else delete reaction[id];
+      }
+      s2.moves = { ...homeOnly, ...reaction };
       return s2;
     };
 

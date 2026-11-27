@@ -2,7 +2,8 @@ import { attackingGoal, discRadius, pitchFor, progress } from '../model/pitch';
 import { playerById, type BoardState } from '../model/tactic';
 import type { Step, Tactic, TeamSide, Vec } from '../model/types';
 import { playerAt } from './animation';
-import { clamp, dist, easeInOut, lerp } from './geometry';
+import { clamp, dist, lerp } from './geometry';
+import { runFraction, type StepCarry } from './motion';
 import { opponentsOf, scaleFor } from './options';
 
 /**
@@ -47,7 +48,7 @@ function limit(from: Vec, to: Vec, max: number): Vec {
  * they keep them, count as already pressing or holding, and others space around them.
  */
 export function reactStep(
-  t: Tactic, before: BoardState, step: Step, attacking: TeamSide = 'home', fixed: Set<string> = new Set(),
+  t: Tactic, before: BoardState, step: Step, attacking: TeamSide = 'home', fixed: Set<string> = new Set(), carry: StepCarry = {},
 ): Record<string, Vec[]> {
   if (!t.showOpponents) return {};
   const a = step.ball;
@@ -80,7 +81,7 @@ export function reactStep(
   const passing = !!a && a.type !== 'dribble';
   const ballIdsAtEnd = new Set<string>();
   const release = passing ? clamp(a!.releaseAt, 0, 0.95) : 1;
-  const carrierAtRelease = playerAt(step, carrier.id, before.positions[carrier.id], release);
+  const carrierAtRelease = playerAt(step, carrier.id, before.positions[carrier.id], release, carry[carrier.id]);
 
   let dest: Vec;
   let receiverId: string | undefined;
@@ -114,13 +115,13 @@ export function reactStep(
   // Only the designated presser may approach the ball; everyone else gives the carrier room.
   const ballRoom = pressGap(t.format) + 1.5;
   let lastDetourAroundBall = false;
-  const routeAround = (from: Vec, to: Vec, presser = false): Vec[] => {
+  const routeAround = (from: Vec, to: Vec, presser = false, v0 = 0): Vec[] => {
     lastDetourAroundBall = false;
     // Check the run against where each attacker actually is at that moment of the step.
     for (const u of [0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875]) {
-      const me = lerp(from, to, easeInOut(u));
+      const me = lerp(from, to, runFraction(dist(from, to), D, u, { v0, v1: 0 }));
       for (const id of homeIds) {
-        const hm = playerAt(step, id, before.positions[id], u);
+        const hm = playerAt(step, id, before.positions[id], u, carry[id]);
         // The passer only has the ball until release, the receiver only once it's played.
         const hasBall = (id === carrier.id && (!passing || u <= release)) || (id === receiverId && u >= release);
         const need = !presser && hasBall ? ballRoom : clearance;
@@ -164,7 +165,7 @@ export function reactStep(
     const tgt = clampToPitch(target, p.length, p.width);
     if (dist(from, tgt) > 0.4) {
       const budget = (presser ? PRESS_SPEED : TRACK_SPEED) * D;
-      const path = routeAround(from, tgt, presser);
+      const path = routeAround(from, tgt, presser, carry[id]?.v0 ?? 0);
       let len = 0;
       let cur = from;
       for (const pt of path) {
@@ -437,7 +438,7 @@ export function reactStep(
  * Replace the defending team's movement in one step with the engine's reaction.
  * Returns the players whose runs the engine now controls.
  */
-export function reactInPlace(t: Tactic, before: BoardState, step: Step, sides: TeamSide[], keep: boolean): string[] {
+export function reactInPlace(t: Tactic, before: BoardState, step: Step, sides: TeamSide[], keep: boolean, carry: StepCarry = {}): string[] {
   const attacking = playerById(t, step.ball?.from ?? before.ballOwner)?.team;
   if (!attacking) return [];
   const defending: TeamSide = attacking === 'home' ? 'away' : 'home';
@@ -446,7 +447,7 @@ export function reactInPlace(t: Tactic, before: BoardState, step: Step, sides: T
   for (const [id, path] of Object.entries(step.moves)) {
     if (playerById(t, id)?.team === defending && keep) manual[id] = path;
   }
-  const reaction = reactStep(t, before, step, attacking, new Set(Object.keys(manual)));
+  const reaction = reactStep(t, before, step, attacking, new Set(Object.keys(manual)), carry);
   if (!Object.keys(reaction).length) return [];
   for (const id of Object.keys(step.moves)) {
     if (playerById(t, id)?.team === defending) delete step.moves[id];

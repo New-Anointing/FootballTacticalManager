@@ -15,7 +15,9 @@ const clone = <T,>(v: T): T => JSON.parse(JSON.stringify(v));
 const round3 = (v: number) => Math.round(v * 1000) / 1000;
 
 function stepProblems(spec: PresetSpec, i: number) {
-  const r = analyseTactic(buildPreset({ ...spec, steps: spec.steps.slice(0, i + 1) }));
+  // Include the following step: how a run unfolds depends on the speed the player
+  // carries into the next one.
+  const r = analyseTactic(buildPreset({ ...spec, steps: spec.steps.slice(0, i + 2) }));
   const list = r.findings.filter((f) => f.stepIndex === i && (f.severity === 'error' || f.severity === 'warning'));
   return {
     score: list.reduce((s, f) => s + (f.severity === 'error' ? 100 : 10), 0),

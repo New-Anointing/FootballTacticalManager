@@ -1,7 +1,8 @@
 import { attackingGoal, pitchFor } from '../model/pitch';
 import { activePlayers, boardStates, playerById, type BoardState } from '../model/tactic';
 import type { Step, Tactic, Vec } from '../model/types';
-import { easeInOut, lerp, pointAlong } from './geometry';
+import { lerp, pathLength, pointAlong } from './geometry';
+import { AT_REST, carryFor, runFraction, type Carry, type StepCarry } from './motion';
 
 export interface Frame {
   positions: Record<string, Vec>;
@@ -20,9 +21,13 @@ export function playerPath(step: Step, id: string, start: Vec): Vec[] {
   return moves && moves.length ? [start, ...moves] : [start];
 }
 
-/** Where a player is at fraction t of a step. */
-export function playerAt(step: Step, id: string, start: Vec, t: number): Vec {
-  return pointAlong(playerPath(step, id, start), easeInOut(t));
+/**
+ * Where a player is at fraction t of a step. `carry` is the speed they bring into the
+ * step and keep at the end of it (see motion.ts); without it they start and finish at rest.
+ */
+export function playerAt(step: Step, id: string, start: Vec, t: number, carry: Carry = AT_REST): Vec {
+  const path = playerPath(step, id, start);
+  return pointAlong(path, runFraction(pathLength(path), step.duration, t, carry));
 }
 
 /** Typical ball speeds (m/s). Passes travel at these speeds unless the step is too short. */
@@ -45,17 +50,19 @@ export interface BallFlight {
  * played to where the receiver will be when the ball arrives; the ball moves at a
  * realistic speed and the receiver carries it for the rest of the step.
  */
-export function ballFlight(tactic: Tactic, step: Step, before: BoardState, after: BoardState): BallFlight | null {
+export function ballFlight(
+  tactic: Tactic, step: Step, before: BoardState, after: BoardState, carry: StepCarry = {},
+): BallFlight | null {
   const a = step.ball;
   if (!a || a.type === 'dribble' || !before.positions[a.from]) return null;
   const D = Math.max(0.1, step.duration);
   const release = Math.min(Math.max(a.releaseAt, 0), 0.95);
-  const origin = playerAt(step, a.from, before.positions[a.from], release);
+  const origin = playerAt(step, a.from, before.positions[a.from], release, carry[a.from]);
   const speed = BALL_SPEED[a.type];
   const lofted = a.type === 'cross' || a.type === 'clearance';
   const arriveFor = (dest: Vec) => Math.min(1, release + Math.hypot(dest.x - origin.x, dest.y - origin.y) / (speed * D));
   if ((a.type === 'pass' || a.type === 'cross') && a.to && before.positions[a.to]) {
-    const recvAt = (tt: number) => playerAt(step, a.to!, before.positions[a.to!], tt);
+    const recvAt = (tt: number) => playerAt(step, a.to!, before.positions[a.to!], tt, carry[a.to!]);
     let arrive = 1;
     for (let k = 0; k < 6; k++) arrive = arriveFor(recvAt(arrive));
     return { origin, dest: recvAt(arrive), release, arrive: Math.max(arrive, release + 0.02), lofted, receiver: a.to };
@@ -77,9 +84,10 @@ export function ballAt(
   before: BoardState,
   after: BoardState,
   t: number,
+  carry: StepCarry = {},
 ): { pos: Vec; height: number } {
   const a = step.ball;
-  const carrierAt = (id: string, tt: number) => playerAt(step, id, before.positions[id], tt);
+  const carrierAt = (id: string, tt: number) => playerAt(step, id, before.positions[id], tt, carry[id]);
 
   if (!a || !before.positions[a.from]) {
     if (before.ballOwner && before.positions[before.ballOwner]) {
@@ -90,7 +98,7 @@ export function ballAt(
 
   if (a.type === 'dribble') return { pos: carrierAt(a.from, t), height: 0 };
 
-  const f = ballFlight(tactic, step, before, after)!;
+  const f = ballFlight(tactic, step, before, after, carry)!;
   if (t <= f.release) return { pos: carrierAt(a.from, t), height: 0 };
   if (t >= f.arrive) {
     if (f.receiver) return { pos: carrierAt(f.receiver, t), height: 0 };
@@ -110,12 +118,13 @@ export function frameAtStep(tactic: Tactic, states: BoardState[], stepIndex: num
   const step = tactic.steps[stepIndex];
   const before = states[stepIndex];
   const after = states[stepIndex + 1];
+  const carry = carryFor(tactic, states, stepIndex);
   const positions: Record<string, Vec> = {};
   for (const pl of activePlayers(tactic)) {
     const start = before.positions[pl.id];
-    if (start) positions[pl.id] = playerAt(step, pl.id, start, t);
+    if (start) positions[pl.id] = playerAt(step, pl.id, start, t, carry[pl.id]);
   }
-  const ball = ballAt(tactic, step, before, after, t);
+  const ball = ballAt(tactic, step, before, after, t, carry);
   return { positions, ball: ball.pos, ballHeight: ball.height, stepIndex, stepT: t };
 }
 

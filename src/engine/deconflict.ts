@@ -3,37 +3,22 @@ import { pressGap } from './defence';
 import { scaleFor } from './options';
 import type { BoardState } from '../model/tactic';
 import type { Step, Tactic, Vec } from '../model/types';
-import { clamp, dist, easeInOut, pathLength, pointAlong } from './geometry';
+import { clamp, cutPath, dist, pathLength, pointAlong } from './geometry';
+import { AT_REST, runFraction, runPeakSpeed, SPRINT, type StepCarry } from './motion';
 
-/** Fastest an engine run may become once bent round someone: short of a flat-out sprint. */
-const MAX_DETOUR_SPEED = 7.2;
 const SAMPLES = 16;
-
-/** The first fraction `f` (by distance) of a run. */
-function cutPath(path: Vec[], f: number): Vec[] {
-  const total = pathLength(path);
-  let left = total * f;
-  const out = [path[0]];
-  for (let i = 1; i < path.length; i++) {
-    const seg = dist(path[i - 1], path[i]);
-    if (left <= seg) {
-      out.push(pointAlong([path[i - 1], path[i]], seg === 0 ? 0 : left / seg));
-      return out;
-    }
-    out.push(path[i]);
-    left -= seg;
-  }
-  return out;
-}
 
 /**
  * Players run round each other, not through each other. After the engines have moved
  * everyone in a step, an engine-controlled run that passes through an opponent (or
  * finishes on top of one) is bent around them; only if there is no time for that does
  * it finish a little short or to one side. Runs in `adjustable` may change; scripted
- * runs, and the players on the ball, never do.
+ * runs, and the players on the ball, never do. With `sameEnd`, runs are only bent:
+ * everyone still finishes where they were going.
  */
-export function deconflictStep(t: Tactic, before: BoardState, step: Step, adjustable: Set<string>): void {
+export function deconflictStep(
+  t: Tactic, before: BoardState, step: Step, adjustable: Set<string>, carry: StepCarry = {}, sameEnd = false,
+): void {
   const p = pitchFor(t.format);
   const r = discRadius(p);
   const D = Math.max(0.5, step.duration);
@@ -46,7 +31,9 @@ export function deconflictStep(t: Tactic, before: BoardState, step: Step, adjust
     const m = step.moves[id];
     return m && m.length ? [before.positions[id], ...m] : [before.positions[id]];
   };
-  const at = (path: Vec[], u: number) => pointAlong(path, easeInOut(u));
+  // Where a player is part-way through the step, with the speed they carry in and out.
+  const frac = (id: string, path: Vec[], u: number) => runFraction(pathLength(path), D, u, carry[id]);
+  const at = (id: string, path: Vec[], u: number) => pointAlong(path, frac(id, path, u));
   const clampPitch = (v: Vec): Vec => ({ x: clamp(v.x, 0.5, p.length - 0.5), y: clamp(v.y, 0.5, p.width - 0.5) });
   // A little more room than the analysis demands (1.8r), so playback never shows discs merging.
   const need = (x: string, y: string) => (onBall.has(x) || onBall.has(y) ? 1.25 * r : 1.95 * r);
@@ -82,7 +69,7 @@ export function deconflictStep(t: Tactic, before: BoardState, step: Step, adjust
       let mine = 0;
       for (let k = 1; k <= SAMPLES; k++) {
         const u = k / SAMPLES;
-        const d = dist(at(path, u), at(theirs, u));
+        const d = dist(at(id, path, u), at(pl.id, theirs, u));
         if (!same && onBall.has(pl.id)) res.ballMin = Math.min(res.ballMin, d);
         if (d >= lim) continue;
         // Already that close at the start and not closing in: moving off, not running into them.
@@ -116,11 +103,11 @@ export function deconflictStep(t: Tactic, before: BoardState, step: Step, adjust
   };
 
   /** Alternative runs for `id`: round the other player on either side, shorter, or to one side. */
-  const alternatives = (path: Vec[], u: number, other: string): Vec[][] => {
+  const alternatives = (id: string, path: Vec[], u: number, other: string): Vec[][] => {
     const S = path[0];
     const E = path[path.length - 1];
-    const m = at(path, u);
-    const q = at(pathOf(other), u);
+    const m = at(id, path, u);
+    const q = at(other, pathOf(other), u);
     let n = { x: m.x - q.x, y: m.y - q.y };
     const nl = Math.hypot(n.x, n.y);
     if (nl < 0.2) {
@@ -131,7 +118,7 @@ export function deconflictStep(t: Tactic, before: BoardState, step: Step, adjust
       n = { x: -dy / dl, y: dx / dl };
     } else n = { x: n.x / nl, y: n.y / nl };
     // Which leg of the run the clash is on, so the detour goes in the right place.
-    let along = pathLength(path) * easeInOut(u);
+    let along = pathLength(path) * frac(id, path, u);
     let seg = 1;
     for (; seg < path.length - 1; seg++) {
       const l = dist(path[seg - 1], path[seg]);
@@ -146,8 +133,10 @@ export function deconflictStep(t: Tactic, before: BoardState, step: Step, adjust
           out.push([...path.slice(0, seg), wp, ...path.slice(seg)]);
         }
       }
+      if (sameEnd) return out;
       for (const f of [0.85, 0.7, 0.55, 0.4]) out.push(cutPath(path, f));
     }
+    if (sameEnd) return out;
     for (const k of [1, 1.6, 2.3]) {
       for (const side of [1, -1]) out.push([S, clampPitch({ x: E.x + n.x * side * k * r, y: E.y + n.y * side * k * r })]);
     }
@@ -172,10 +161,11 @@ export function deconflictStep(t: Tactic, before: BoardState, step: Step, adjust
         const orig = pathOf(id);
         const base = id === pl.id ? current : clashes(id, orig);
         const other = id === pl.id ? current.other : pl.id;
-        const maxLen = Math.max(MAX_DETOUR_SPEED * D, pathLength(orig) + 0.01);
+        // A detour must still be runnable: no faster than a hard sprint (or than the original run).
+        const maxPeak = Math.max(SPRINT, runPeakSpeed(pathLength(orig), D, carry[id] ?? AT_REST)) + 0.05;
         const baseDoubles = doubles(id, orig[orig.length - 1]);
-        for (const cand of alternatives(orig, current.u, other)) {
-          if (pathLength(cand) > maxLen) continue;
+        for (const cand of alternatives(id, orig, current.u, other)) {
+          if (pathLength(cand) > pathLength(orig) + 0.01 && runPeakSpeed(pathLength(cand), D, carry[id] ?? AT_REST) > maxPeak) continue;
           const c = clashes(id, cand);
           if (c.total >= base.total - 0.05) continue; // must actually help
           // Never make team-mates overlap, crowd the ball or double up where they didn't before.
