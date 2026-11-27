@@ -25,6 +25,51 @@ export function playerAt(step: Step, id: string, start: Vec, t: number): Vec {
   return pointAlong(playerPath(step, id, start), easeInOut(t));
 }
 
+/** Typical ball speeds (m/s). Passes travel at these speeds unless the step is too short. */
+export const BALL_SPEED = { pass: 14, cross: 17, shot: 26, clearance: 22 } as const;
+
+export interface BallFlight {
+  origin: Vec;
+  dest: Vec;
+  /** Fraction of the step when the ball leaves the passer. */
+  release: number;
+  /** Fraction of the step when the ball arrives (at the receiver's feet / target). */
+  arrive: number;
+  lofted: boolean;
+  /** Receiving player, who carries the ball after it arrives. */
+  receiver?: string;
+}
+
+/**
+ * Where and when a pass, cross, shot or clearance travels. A pass to a player is
+ * played to where the receiver will be when the ball arrives; the ball moves at a
+ * realistic speed and the receiver carries it for the rest of the step.
+ */
+export function ballFlight(tactic: Tactic, step: Step, before: BoardState, after: BoardState): BallFlight | null {
+  const a = step.ball;
+  if (!a || a.type === 'dribble' || !before.positions[a.from]) return null;
+  const D = Math.max(0.1, step.duration);
+  const release = Math.min(Math.max(a.releaseAt, 0), 0.95);
+  const origin = playerAt(step, a.from, before.positions[a.from], release);
+  const speed = BALL_SPEED[a.type];
+  const lofted = a.type === 'cross' || a.type === 'clearance';
+  const arriveFor = (dest: Vec) => Math.min(1, release + Math.hypot(dest.x - origin.x, dest.y - origin.y) / (speed * D));
+  if ((a.type === 'pass' || a.type === 'cross') && a.to && before.positions[a.to]) {
+    const recvAt = (tt: number) => playerAt(step, a.to!, before.positions[a.to!], tt);
+    let arrive = 1;
+    for (let k = 0; k < 6; k++) arrive = arriveFor(recvAt(arrive));
+    return { origin, dest: recvAt(arrive), release, arrive: Math.max(arrive, release + 0.02), lofted, receiver: a.to };
+  }
+  let dest: Vec;
+  if (a.type === 'shot') {
+    const team = playerById(tactic, a.from)?.team ?? 'home';
+    dest = a.target ?? attackingGoal(team, pitchFor(tactic.format));
+  } else {
+    dest = a.target ?? after.ball;
+  }
+  return { origin, dest, release, arrive: Math.max(arriveFor(dest), release + 0.02), lofted };
+}
+
 /** Ball position and height at fraction t of a step. */
 export function ballAt(
   tactic: Tactic,
@@ -45,23 +90,15 @@ export function ballAt(
 
   if (a.type === 'dribble') return { pos: carrierAt(a.from, t), height: 0 };
 
-  const release = Math.min(Math.max(a.releaseAt, 0), 0.95);
-  if (t <= release) return { pos: carrierAt(a.from, t), height: 0 };
-
-  const origin = carrierAt(a.from, release);
-  let dest: Vec;
-  if ((a.type === 'pass' || a.type === 'cross') && a.to && before.positions[a.to]) {
-    dest = after.positions[a.to];
-  } else if (a.type === 'shot') {
-    const team = playerById(tactic, a.from)?.team ?? 'home';
-    dest = a.target ?? attackingGoal(team, pitchFor(tactic.format));
-  } else {
-    dest = a.target ?? after.ball;
+  const f = ballFlight(tactic, step, before, after)!;
+  if (t <= f.release) return { pos: carrierAt(a.from, t), height: 0 };
+  if (t >= f.arrive) {
+    if (f.receiver) return { pos: carrierAt(f.receiver, t), height: 0 };
+    return { pos: f.dest, height: 0 };
   }
-  const u = (t - release) / (1 - release);
-  const lofted = a.type === 'cross' || a.type === 'clearance';
-  const peak = lofted ? Math.min(8, Math.hypot(dest.x - origin.x, dest.y - origin.y) * 0.18) : 0;
-  return { pos: lerp(origin, dest, u), height: peak * 4 * u * (1 - u) };
+  const u = (t - f.release) / (f.arrive - f.release);
+  const peak = f.lofted ? Math.min(8, Math.hypot(f.dest.x - f.origin.x, f.dest.y - f.origin.y) * 0.18) : 0;
+  return { pos: lerp(f.origin, f.dest, u), height: peak * 4 * u * (1 - u) };
 }
 
 /** Frame for a specific step index and progress through it. */

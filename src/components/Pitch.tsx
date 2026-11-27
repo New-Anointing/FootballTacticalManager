@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
-import { playerAt, type Frame } from '../engine/animation';
+import { ballFlight, playerAt, type Frame } from '../engine/animation';
 import { clamp, dist } from '../engine/geometry';
 import { attackingGoal, pitchFor, type PitchSpec } from '../model/pitch';
 import { activePlayers, playerById, type BoardState } from '../model/tactic';
@@ -109,8 +109,10 @@ function StepArrows({ tactic, step, before, after, r, colors, faded }: ArrowsPro
   let ballKind: 'pass' | 'shot' | 'dribble' | 'cross' = 'pass';
   if (a && before.positions[a.from]) {
     const origin = playerAt(step, a.from, before.positions[a.from], a.releaseAt);
-    if ((a.type === 'pass' || a.type === 'cross') && a.to && after.positions[a.to]) {
-      ballLine = [origin, after.positions[a.to]];
+    const flight = ballFlight(tactic, step, before, after);
+    if ((a.type === 'pass' || a.type === 'cross') && a.to && after.positions[a.to] && flight) {
+      // Arrow to where the ball meets the receiver (they may carry it on from there).
+      ballLine = [flight.origin, flight.dest];
       ballKind = a.type;
     } else if (a.type === 'shot') {
       const team = playerById(tactic, a.from)?.team ?? 'home';

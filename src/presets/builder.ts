@@ -1,4 +1,5 @@
 import { frac, pitchFor } from '../model/pitch';
+import { reactAll } from '../engine/defence';
 import { createTactic } from '../model/tactic';
 import type { BallActionType, Step, StepOutcome, Tactic, TacticPhase, Vec } from '../model/types';
 
@@ -29,6 +30,12 @@ export interface PresetSpec {
   setup?: Record<string, F>;
   /** Override role labels, e.g. to show futsal names. */
   roles?: Record<string, string>;
+  /**
+   * How opponents move. 'react' (default): the defensive engine makes them press,
+   * track and shift realistically; opponent moves written in a step override it
+   * for those players. 'manual': only the moves written here.
+   */
+  opponents?: 'react' | 'manual';
   steps: PresetStep[];
 }
 
@@ -79,5 +86,6 @@ export function buildPreset(spec: PresetSpec): Tactic {
         : undefined,
     };
   });
+  if ((spec.opponents ?? 'react') === 'react') t.steps = reactAll(t, { keep: true });
   return t;
 }

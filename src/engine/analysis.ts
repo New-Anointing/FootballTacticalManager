@@ -1,7 +1,8 @@
 import { attackingGoal, inPenaltyArea, insidePitch, ownGoal, pitchFor, progress } from '../model/pitch';
 import { activePlayers, boardStates, playerById, playerLabel, type BoardState } from '../model/tactic';
 import type { Player, Step, Tactic, TeamSide, Vec } from '../model/types';
-import { frameAtStep, playerPath } from './animation';
+import { ballFlight, frameAtStep, playerPath } from './animation';
+import { PRESS_SPEED } from './defence';
 import { dist, lerp, pathLength } from './geometry';
 import { isOffside, opponentsOf, passOptions, scaleFor, shotXg, teammatesOf } from './options';
 
@@ -10,12 +11,13 @@ export type Severity = 'error' | 'warning' | 'info' | 'good';
 export type Fix =
   | { kind: 'reroute-pass'; stepIndex: number; to: string }
   | { kind: 'extend-duration'; stepIndex: number; duration: number }
-  | { kind: 'set-release'; stepIndex: number; releaseAt: number };
+  | { kind: 'set-release'; stepIndex: number; releaseAt: number }
+  | { kind: 'react-defence'; stepIndex: number };
 
 export interface Finding {
   id: string;
   severity: Severity;
-  category: 'movement' | 'passing' | 'shape' | 'defending' | 'finishing' | 'outcome' | 'rules' | 'setup';
+  category: 'movement' | 'passing' | 'shape' | 'defending' | 'finishing' | 'outcome' | 'rules' | 'setup' | 'realism';
   title: string;
   detail: string;
   /** -1 = setup / whole tactic. */
@@ -104,6 +106,7 @@ export function analyseTactic(t: Tactic): AnalysisReport {
     const m: StepMetrics = { stepIndex: i, possession, width: 0, depth: 0 };
 
     checkMovement(t, step, i, before, findings, p);
+    if (possession === 'home' && t.showOpponents) checkOpponentRealism(t, step, i, states, findings);
     if (step.ball) checkBallAction(t, step, i, states, findings, m);
 
     if (possession) {
@@ -171,6 +174,77 @@ export function analyseTactic(t: Tactic): AnalysisReport {
   const order: Record<Severity, number> = { error: 0, warning: 1, good: 2, info: 3 };
   findings.sort((a, b) => order[a.severity] - order[b.severity] || a.stepIndex - b.stepIndex);
   return { score, grade, verdict, findings, metrics, counts };
+}
+
+/**
+ * Is the opposition behaving like a real team? A move only proves something if it
+ * works against opponents who press the ball and track runners. Flags passive
+ * ("statue") defending so tactics aren't validated against an unrealistic defence.
+ */
+function checkOpponentRealism(t: Tactic, step: Step, i: number, states: BoardState[], findings: Finding[]) {
+  const p = pitchFor(t.format);
+  const s = scaleFor(p);
+  const before = states[i];
+  const after = states[i + 1];
+  const D = Math.max(0.1, step.duration);
+  const opp = outfield(opponentsOf(t, 'home')).filter((o) => before.positions[o.id] && after.positions[o.id]);
+  if (!opp.length) return;
+  const moved = (id: string) => pathLength(playerPath(step, id, before.positions[id]));
+  const fix: Fix = { kind: 'react-defence', stepIndex: i };
+
+  // Caught in possession: an opponent is on the carrier before the ball is released.
+  const a = step.ball;
+  if (a && a.type !== 'dribble' && before.ballOwner === a.from && before.positions[a.from]) {
+    const release = Math.min(Math.max(a.releaseAt, 0), 0.95);
+    const fr = frameAtStep(t, states, i, release);
+    const carrierPos = fr.positions[a.from];
+    const tackler = opp.find((o) => fr.positions[o.id] && dist(fr.positions[o.id], carrierPos) < 1.0);
+    if (tackler && carrierPos) {
+      findings.push({
+        id: fid(), severity: 'error', category: 'realism', stepIndex: i, players: [a.from, tackler.id],
+        title: `${playerLabel(playerById(t, a.from)!)} is caught in possession`,
+        detail: `${playerLabel(tackler)} is on the ball before it is released. Release it earlier or move away from the press.`,
+        fix: { kind: 'set-release', stepIndex: i, releaseAt: Math.max(0, release - 0.25) },
+      });
+    }
+  }
+
+  if (a?.type === 'shot') return; // the ball ends in the net; pressure on the shooter is judged by xG / blockers
+  // Nobody closes down the ball even though someone could have.
+  const ball = after.ball;
+  const gapNow = Math.min(...opp.map((o) => dist(after.positions[o.id], ball)));
+  const couldPress = opp.filter((o) => dist(before.positions[o.id], ball) - PRESS_SPEED * D * 0.6 < 4 * s + 1.5);
+  const pressed = couldPress.some((o) => dist(before.positions[o.id], ball) - dist(after.positions[o.id], ball) > Math.min(2, 0.3 * dist(before.positions[o.id], ball)));
+  if (D >= 0.8 && gapNow > 4 * s + 1.5 && couldPress.length && !pressed) {
+    const nearest = couldPress.sort((x, y) => dist(before.positions[x.id], ball) - dist(before.positions[y.id], ball))[0];
+    findings.push({
+      id: fid(), severity: 'warning', category: 'realism', stepIndex: i, players: [nearest.id],
+      title: 'Nobody presses the ball',
+      detail: `${playerLabel(nearest)} could close down the ball in ${D}s but doesn't. A real opponent would; make them react to see if the move still works.`,
+      fix,
+    });
+  }
+
+  // Opponents near the ball standing still while play moves around them.
+  const ballMove = dist(before.ball, after.ball);
+  if (D >= 1 && ballMove > 4 * s) {
+    const homeEnd = teammatesOf(t, 'home').map((h) => after.positions[h.id]).filter(Boolean);
+    const frozen = opp.filter(
+      (o) =>
+        moved(o.id) < 0.6 &&
+        Math.min(dist(before.positions[o.id], before.ball), dist(before.positions[o.id], ball)) < 20 * s &&
+        // Holding position tight to an attacker is marking, not standing still.
+        !homeEnd.some((h) => dist(h, after.positions[o.id]) < 3 * s + 1),
+    );
+    if (frozen.length >= 2) {
+      findings.push({
+        id: fid(), severity: 'warning', category: 'realism', stepIndex: i, players: frozen.map((o) => o.id),
+        title: `${frozen.length} opponents stand still`,
+        detail: `${frozen.map((o) => playerLabel(o)).join(', ')} don't react while the ball moves ${Math.round(ballMove)} m near them. Opponents shift, press and track runners.`,
+        fix,
+      });
+    }
+  }
 }
 
 function checkMovement(
@@ -245,7 +319,7 @@ function checkBallAction(
   const opp = mine ? t.awayName : t.homeName;
 
   if (a.type === 'shot') {
-    const xg = shotXg(t, from.team, origin, atRelease.positions);
+    const xg = shotXg(t, from.team, origin, atRelease.positions, a.target);
     m.xg = xg;
     const pct = Math.round(xg * 100);
     if (!mine) {
@@ -296,11 +370,13 @@ function checkBallAction(
   const receiver = playerById(t, a.to);
   /** A pass aimed at an opposing player is an interception / turnover by design. */
   const turnover = !!receiver && receiver.team !== from.team;
-  const dest: Vec = receiver ? after.positions[receiver.id] : a.target ?? after.ball;
+  const fl = ballFlight(t, step, before, after)!;
+  const dest: Vec = fl.dest;
   const length = dist(origin, dest);
   m.passDistance = length;
-  const flight = (1 - release) * Math.max(0.1, step.duration);
+  const flight = (fl.arrive - fl.release) * Math.max(0.1, step.duration);
   const speed = length / flight;
+  const arrival = frameAtStep(t, states, i, fl.arrive);
   if (speed > MAX_PASS_SPEED) {
     findings.push({
       id: fid(), severity: 'warning', category: 'passing', stepIndex: i, players: [a.from],
@@ -327,7 +403,7 @@ function checkBallAction(
     for (let k = 1; k <= 10; k++) {
       const u = k / 10;
       if (lofted && u < 0.85) continue;
-      const tt = release + u * (1 - release);
+      const tt = fl.release + u * (fl.arrive - fl.release);
       const fr = frameAtStep(t, states, i, tt);
       const ballPt = lerp(origin, dest, u);
       for (const o of opponents) {
@@ -381,8 +457,17 @@ function checkBallAction(
   }
 
   if (receiver && opponents.length) {
-    const pressure = Math.min(...opponents.map((o) => after.positions[o.id]).filter(Boolean).map((o) => dist(o, dest)));
-    if (pressure < 1.8 * Math.max(1, s)) {
+    const pressure = Math.min(...opponents.map((o) => arrival.positions[o.id]).filter(Boolean).map((o) => dist(o, dest)));
+    // A first-time lay-off is the right answer to pressure, not a risk.
+    const next = t.steps[i + 1];
+    const layOff = !!next?.ball && next.ball.from === receiver.id && next.ball.type !== 'dribble' && next.ball.releaseAt <= 0.15;
+    if (pressure < 1.8 * Math.max(1, s) && layOff && mine) {
+      findings.push({
+        id: fid(), severity: 'info', category: 'passing', stepIndex: i, players: [receiver.id],
+        title: `${playerLabel(receiver)} plays first time under pressure`,
+        detail: `An opponent is ${pressure.toFixed(1)} m away on arrival, so the first-time pass in the next step is the right choice.`,
+      });
+    } else if (pressure < 1.8 * Math.max(1, s)) {
       findings.push({
         id: fid(), severity: mine ? 'warning' : 'good', category: mine ? 'passing' : 'defending', stepIndex: i, players: [receiver.id],
         title: mine ? `${playerLabel(receiver)} receives under pressure` : `${opp}'s receiver is pressed immediately`,

@@ -95,7 +95,7 @@ export function passOptions(t: Tactic, positions: Record<string, Vec>, carrierId
 }
 
 /** Simple expected-goals estimate from shot location, goal angle and blockers. */
-export function shotXg(t: Tactic, side: TeamSide, from: Vec, positions: Record<string, Vec>): number {
+export function shotXg(t: Tactic, side: TeamSide, from: Vec, positions: Record<string, Vec>, aim?: Vec): number {
   const p = pitchFor(t.format);
   const goal = attackingGoal(side, p);
   const norm = 105 / p.length; // compare distances as if on a full-size pitch
@@ -103,10 +103,12 @@ export function shotXg(t: Tactic, side: TeamSide, from: Vec, positions: Record<s
   // Angle is scale-invariant, so small goals on small pitches compare fairly with 11v11.
   const angle = goalAngle(from, goal, p.goalWidth);
   let xg = 1 / (1 + Math.exp(-(-1.1 - 0.12 * d + 2.2 * angle)));
+  // Blockers are judged along the line the shot actually takes (default: centre of goal).
+  const line = aim && Math.abs(aim.x - goal.x) < 1 ? aim : goal;
   for (const o of opponentsOf(t, side)) {
     const op = positions[o.id];
     if (!op || o.line === 'GK') continue;
-    const { d: gap, t: along } = distToSegment(op, from, goal);
+    const { d: gap, t: along } = distToSegment(op, from, line);
     if (along > 0.02 && along < 0.98 && gap < 1.2) xg *= 0.55;
   }
   return Math.max(0.005, Math.min(0.95, xg));

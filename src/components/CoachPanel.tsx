@@ -13,7 +13,7 @@ const QUICK_QUESTIONS = [
 ];
 
 export function CoachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
-  const { current, setFormation, appendSteps, openTactic, settings, setStepIndex, setHighlight } = useStore();
+  const { current, setFormation, appendSteps, openTactic, settings, setStepIndex, setHighlight, reactOpponents } = useStore();
   const report = reportOf(current);
   const [goal, setGoal] = useState<'balanced' | 'attack' | 'defend'>('balanced');
   const [message, setMessage] = useState<string | null>(null);
@@ -85,6 +85,26 @@ export function CoachPanel({ onOpenSettings }: { onOpenSettings: () => void }) {
           <button onClick={() => generate('press')} disabled={!current.showOpponents}>Generate press</button>
         </div>
         {message && <p className="small" style={{ color: 'var(--text)' }}>{message}</p>}
+      </div>
+
+      <div className="card">
+        <h3>Realistic opponents</h3>
+        <p>
+          Replace the opponents' movement with how a well-drilled side reacts in every step where you have the ball: the nearest player
+          presses, the rest hold a compact zonal shape, runners are tracked and beaten players recover. Then check the Analysis tab to see
+          whether your move still works.
+        </p>
+        <div className="list-actions">
+          <button
+            onClick={() => {
+              reactOpponents();
+              setMessage('Opponents now react to every step. Undo (Ctrl+Z) restores the previous movement.');
+            }}
+            disabled={!current.showOpponents || current.steps.length === 0}
+          >
+            Make opponents react
+          </button>
+        </div>
       </div>
 
       <h2>Coaching points</h2>

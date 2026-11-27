@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import type { Fix } from './engine/analysis';
+import { reactAll } from './engine/defence';
 import { applyFormation, isValidFormation } from './model/formations';
 import { cloneTactic, createTactic, newStep, type NewTacticOptions } from './model/tactic';
 import type { BallAction, Step, Tactic, TeamSide, Vec } from './model/types';
@@ -64,6 +65,8 @@ interface State {
   setBallStart: (pos: Vec, owner?: string) => void;
   setFormation: (side: TeamSide, formation: string) => void;
   applyFix: (fix: Fix) => void;
+  /** Replace opponent movement with realistic reactions in every step where we have the ball. */
+  reactOpponents: () => void;
 
   // UI
   setTool: (t: Tool) => void;
@@ -278,6 +281,7 @@ export const useStore = create<State>()(
             if (!step) return;
             if (fix.kind === 'extend-duration') step.duration = Math.max(step.duration, fix.duration);
             if (fix.kind === 'set-release' && step.ball) step.ball.releaseAt = Math.round(fix.releaseAt * 100) / 100;
+            if (fix.kind === 'react-defence') t.steps = reactAll(t, { only: fix.stepIndex });
             if (fix.kind === 'reroute-pass' && step.ball) {
               step.ball.to = fix.to;
               step.ball.target = undefined;
@@ -285,6 +289,11 @@ export const useStore = create<State>()(
           });
           set({ stepIndex: fix.stepIndex });
         },
+
+        reactOpponents: () =>
+          mutate((t) => {
+            t.steps = reactAll(t);
+          }),
 
         setTool: (tool) => set({ tool, toolSource: undefined }),
         setToolSource: (toolSource) => set({ toolSource }),

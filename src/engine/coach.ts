@@ -3,6 +3,7 @@ import { attackingGoal, inPenaltyArea, pitchFor, progress } from '../model/pitch
 import { boardStates, playerById, playerLabel, uid } from '../model/tactic';
 import type { Step, Tactic, TeamSide, Vec } from '../model/types';
 import { analyseTactic, type AnalysisReport, type Finding } from './analysis';
+import { reactStep } from './defence';
 import { clamp, dist, lerp } from './geometry';
 import { isOffside, laneClearance, opponentsOf, passOptions, scaleFor, shotXg, teammatesOf } from './options';
 
@@ -371,10 +372,21 @@ export function generateAttack(t: Tactic, maxSteps = 10): GeneratedMove {
     }
     lofted.slice(0, 2).forEach((o) => candidates.push({ make: () => passStep(o, true), to: o.to }));
 
+    // Opponents in the generated step react with the same defensive engine the
+    // analysis assumes (press, zonal shape, tracking), not the planning estimate.
+    const beforeState = { positions, ballOwner: carrier, ball: positions[carrier] };
+    const withReaction = (st: Step): Step => {
+      if (!t.showOpponents) return st;
+      const homeOnly = Object.fromEntries(Object.entries(st.moves).filter(([id]) => playerById(t, id)?.team === 'home'));
+      const s2: Step = { ...st, moves: homeOnly };
+      s2.moves = { ...homeOnly, ...reactStep(t, beforeState, s2) };
+      return s2;
+    };
+
     let step: Step | undefined;
     let receiver: string | undefined;
     for (const c of candidates) {
-      const candidate = c.make();
+      const candidate = withReaction(c.make());
       holdOnside(t, candidate, positions);
       if (!stepBreaks(t, steps, candidate)) {
         step = candidate;
@@ -382,7 +394,7 @@ export function generateAttack(t: Tactic, maxSteps = 10): GeneratedMove {
         break;
       }
     }
-    if (!step) step = carryStep();
+    if (!step) step = withReaction(carryStep());
     if (receiver) {
       lines.push(`${carrierPl.number}→${playerById(t, receiver)!.number}`);
       prevCarrier = carrier;

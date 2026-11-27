@@ -8,6 +8,7 @@ import { PRESET_TACTICS } from '../../presets/tactics';
 import { analyseTactic } from '../analysis';
 import { frameAtTime, stepStartTime } from '../animation';
 import { generateAttack, generatePress, suggestFormations } from '../coach';
+import { PRESS_SPEED, reactAll, reactStep } from '../defence';
 import { isOffside, shotXg } from '../options';
 
 describe('formations', () => {
@@ -81,13 +82,36 @@ describe('board states and animation', () => {
 });
 
 describe('analysis', () => {
-  it('ships presets that the analysis rates as sound (no errors)', () => {
+  it('ships presets that work against a realistic, pressing defence', () => {
     for (const t of PRESET_TACTICS) {
       const r = analyseTactic(t);
       const errors = r.findings.filter((f) => f.severity === 'error').map((f) => `${t.name}: ${f.title}`);
       expect(errors).toEqual([]);
-      expect(r.score).toBeGreaterThanOrEqual(80);
+      // No "statue" defending: opponents must press, shift and track in every preset.
+      const passive = r.findings.filter((f) => f.category === 'realism').map((f) => `${t.name}: ${f.title}`);
+      expect(passive).toEqual([]);
+      const warnings = r.findings.filter((f) => f.severity === 'warning');
+      expect(warnings.length).toBeLessThanOrEqual(1);
+      expect(r.score).toBeGreaterThanOrEqual(95);
     }
+  });
+
+  it('flags opponents who stand still and let the ball be played freely', () => {
+    const t = createTactic({ format: 5, homeFormation: '1-2-1', awayFormation: '2-2' });
+    t.ballOwner = 'h1';
+    t.initial.h1 = { x: 12, y: 10 };
+    t.initial.h3 = { x: 16, y: 17 };
+    const s = newStep();
+    s.duration = 1.5;
+    s.moves = { h3: [{ x: 26, y: 17 }] };
+    s.ball = { type: 'pass', from: 'h1', to: 'h3', releaseAt: 0.2 };
+    t.steps.push(s); // opponents have no movement at all
+    const passive = analyseTactic(t).findings.filter((f) => f.category === 'realism');
+    expect(passive.length).toBeGreaterThan(0);
+    expect(passive[0].fix?.kind).toBe('react-defence');
+    // With the defensive engine, the same move is played against a reacting opponent.
+    t.steps = reactAll(t);
+    expect(analyseTactic(t).findings.filter((f) => f.category === 'realism')).toEqual([]);
   });
 
   it('flags an impossible sprint and offers a longer step', () => {
@@ -147,6 +171,41 @@ describe('analysis', () => {
     expect(close).toBeGreaterThan(0.3);
     expect(far).toBeLessThan(0.05);
     expect(angle).toBeLessThan(close);
+  });
+});
+
+describe('defensive engine', () => {
+  it('closes down the receiver, from the goal side, at a realistic speed', () => {
+    const t = createTactic({ format: 5, homeFormation: '1-2-1', awayFormation: '2-2' });
+    t.ballOwner = 'h4';
+    t.initial.h4 = { x: 20, y: 10 };
+    t.initial.h1 = { x: 12, y: 10 };
+    const s = newStep();
+    s.duration = 1.2;
+    s.ball = { type: 'pass', from: 'h4', to: 'h1', releaseAt: 0.1 };
+    t.steps.push(s);
+    const before = boardStates(t)[0];
+    const moves = reactStep(t, before, s);
+    // The nearest ala charges the fixo receiving the back pass.
+    const presser = ['a3', 'a4'].find((id) => moves[id]);
+    expect(presser).toBeTruthy();
+    const end = moves[presser!][moves[presser!].length - 1];
+    const startGap = Math.hypot(before.positions[presser!].x - 12, before.positions[presser!].y - 10);
+    expect(Math.hypot(end.x - 12, end.y - 10)).toBeLessThan(startGap - 4);
+    expect(end.x).toBeGreaterThan(12); // goal side of the fixo
+    for (const [id, path] of Object.entries(moves)) {
+      const from = before.positions[id];
+      const last = path[path.length - 1];
+      expect(Math.hypot(last.x - from.x, last.y - from.y) / s.duration).toBeLessThanOrEqual(PRESS_SPEED + 0.01);
+    }
+  });
+
+  it("doesn't move opponents when they have the ball", () => {
+    const t = createTactic({ format: 11 });
+    t.ballOwner = 'a5';
+    const s = newStep();
+    s.ball = { type: 'pass', from: 'a5', to: 'a6', releaseAt: 0.3 };
+    expect(reactStep(t, boardStates(t)[0], s)).toEqual({});
   });
 });
 

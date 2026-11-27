@@ -43,6 +43,7 @@ export function AnalysisPanel() {
       return pl ? `Pass to ${playerLabel(pl)} instead` : null;
     }
     if (f.fix.kind === 'extend-duration') return `Make step ${f.fix.stepIndex + 1} last ${f.fix.duration}s`;
+    if (f.fix.kind === 'react-defence') return `Make opponents react in step ${f.fix.stepIndex + 1}`;
     return `Release at ${Math.round(f.fix.releaseAt * 100)}%`;
   };
 
