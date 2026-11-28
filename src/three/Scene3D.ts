@@ -7,7 +7,10 @@ import {
   ANKLE, applyAction, BALL_SPOT, cycleRate, facingFor, gaitPose, headPitch, HIP_HEIGHT, lookAngles, newPose, SHIN, smoothstep, THIGH, wrapAngle,
   type PlayerAction,
 } from './body';
-import { cameraView, figureScale, goalHeight, stadiumLayout, toWorld, turnTowards, type CameraPreset, type V3 } from './views';
+import {
+  cameraView, eyePoint, figureScale, gazeFor, goalHeight, POV_FOV, POV_RATES, povCamera, smoothPov, stadiumLayout, toWorld, turnTowards,
+  type CameraPreset, type PovMode, type PovState, type V3,
+} from './views';
 
 export interface Actor3D {
   id: string;
@@ -41,10 +44,18 @@ export interface Snapshot3D {
     owner?: string;
     /** 0..1: how far the ball is drawn at the owner's foot (eases in and out round a kick). */
     attach?: number;
+    /** Whose ball it is for the "ball carrier" player view (the receiver once a pass is on its way). */
+    carrier?: string;
   };
   /** During playback positions are shown exactly; otherwise players move smoothly to new spots. */
   playing: boolean;
   arrows: Arrow3D[];
+}
+
+/** The player view: whose eyes to see through, and how. */
+export interface Pov3D {
+  player?: string;
+  mode: PovMode;
 }
 
 export interface Look3D {
@@ -292,6 +303,27 @@ class Figure {
     this.root.rotation.y = this.heading;
   }
 
+  /** Centre of the head (world) and the way it faces (yaw, as a heading). */
+  headWorld(out: THREE.Vector3): { centre: THREE.Vector3; yaw: number } {
+    this.root.updateMatrixWorld(true);
+    this.headG.localToWorld(out.set(0, 0.12, 0));
+    const e = this.headG.matrixWorld.elements;
+    // The head group's local +Z axis in world space.
+    return { centre: out, yaw: Math.atan2(e[8], e[10]) };
+  }
+
+  /**
+   * Hide the head, arms and chest (for a camera at this player's eyes), so it never sees
+   * the inside of its own head or a swinging arm; the legs stay, so a kick comes into view.
+   */
+  setHeadless(on: boolean) {
+    this.upper.visible = !on;
+  }
+
+  get figureScale() {
+    return this.scale;
+  }
+
   /** Where the ball sits when it's at this player's feet (world), given its radius. */
   ballSpot(out: THREE.Vector3, radius: number): THREE.Vector3 {
     const lx = BALL_SPOT.x * this.scale;
@@ -499,6 +531,17 @@ export class Scene3D {
   private camTarget = new THREE.Vector3();
   private camPlaced = false;
   private focus = new THREE.Vector3();
+  private pov: Pov3D = { mode: 'eyes' };
+  private povState?: PovState;
+  /** Whose eyes the camera was at last frame, and how far (0..1) it has glided to a new player. */
+  private povWho?: string;
+  private povSwap = 1;
+  private headless?: Figure;
+  private readonly raycaster = new THREE.Raycaster();
+  private readonly tmp = new THREE.Vector3();
+  private down?: { x: number; y: number; id: number };
+  /** Called when a player is clicked / tapped in the player view. */
+  onPickPlayer?: (id: string) => void;
   private raf = 0;
   private last = 0;
   private readonly resize: ResizeObserver;
@@ -555,18 +598,75 @@ export class Scene3D {
     this.controls.dampingFactor = 0.08;
     this.controls.maxPolarAngle = Math.PI / 2 - 0.04;
     this.controls.minDistance = 4;
-    this.controls.addEventListener('start', () => {
-      if (this.preset !== 'free') {
-        this.preset = 'free';
-        this.onUserCamera?.();
-      }
-    });
+    // Dragging or zooming hands the camera to the user (Free); a click or tap without a
+    // drag picks a player in the player view.
+    const el = this.renderer.domElement;
+    el.addEventListener('pointerdown', this.onDown);
+    el.addEventListener('pointermove', this.onMove);
+    el.addEventListener('pointerup', this.onUp);
+    el.addEventListener('pointercancel', this.onCancel);
+    el.addEventListener('wheel', this.takeOver, { passive: true });
 
     this.buildPitch();
     this.resize = new ResizeObserver(() => this.fit());
     this.resize.observe(host);
     this.fit();
     this.raf = requestAnimationFrame(this.tick);
+  }
+
+  private takeOver = () => {
+    if (this.preset !== 'free') {
+      this.preset = 'free';
+      this.onUserCamera?.();
+    }
+  };
+
+  private onDown = (e: PointerEvent) => {
+    if (this.down && this.down.id !== e.pointerId) this.takeOver(); // second finger: pinch
+    this.down = { x: e.clientX, y: e.clientY, id: e.pointerId };
+  };
+
+  private onMove = (e: PointerEvent) => {
+    if (this.down) {
+      if (Math.hypot(e.clientX - this.down.x, e.clientY - this.down.y) > 6) {
+        this.down = undefined;
+        this.takeOver();
+      }
+    } else if (this.preset === 'player' && e.pointerType === 'mouse') {
+      this.renderer.domElement.style.cursor = this.pick(e) ? 'pointer' : '';
+    }
+  };
+
+  private onCancel = () => {
+    this.down = undefined;
+  };
+
+  private onUp = (e: PointerEvent) => {
+    const d = this.down;
+    this.down = undefined;
+    if (!d || this.preset !== 'player') return;
+    const id = this.pick(e);
+    if (id) this.onPickPlayer?.(id);
+  };
+
+  /** The player under a screen point (their body or their number label). */
+  private pick(e: PointerEvent): string | undefined {
+    const r = this.renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const owner = new Map<THREE.Object3D, string>();
+    for (const [id, f] of this.figures) {
+      owner.set(f.root, id);
+      owner.set(f.label, id);
+    }
+    const hits = this.raycaster.intersectObjects([...owner.keys()], true);
+    for (const h of hits) {
+      for (let o: THREE.Object3D | null = h.object; o; o = o.parent) {
+        const id = owner.get(o);
+        if (id && o.visible && h.object.visible) return id;
+      }
+    }
+    return undefined;
   }
 
   private fit() {
@@ -810,7 +910,20 @@ export class Scene3D {
   }
 
   setCamera(preset: CameraPreset) {
+    if (preset === 'player' && this.preset !== 'player') this.startPov();
     this.preset = preset;
+  }
+
+  setPov(pov: Pov3D) {
+    this.pov = pov;
+  }
+
+  /** Begin the player view from wherever the camera is now, so it glides in. */
+  private startPov() {
+    const dir = this.camera.getWorldDirection(this.tmp);
+    const p = this.camera.position;
+    this.povState = { eye: { x: p.x, y: p.y, z: p.z }, yaw: Math.atan2(dir.x, dir.z), pitch: Math.asin(Math.max(-1, Math.min(1, dir.y))) };
+    this.povWho = undefined;
   }
 
   private removeFigure(f: Figure) {
@@ -949,8 +1062,19 @@ export class Scene3D {
     this.buildArrows();
     // Camera: glide to the chosen view; in Free the user drives it.
     this.focus.lerp(new THREE.Vector3(ballW.x, 0, ballW.z), 1 - Math.exp(-dt * 2.2));
-    if (this.preset !== 'free') {
-      const v = cameraView(this.preset, p, { x: this.focus.x, y: 0, z: this.focus.z }, this.camera.aspect);
+    const subject = this.preset === 'player' && this.pov.player ? this.figures.get(this.pov.player) : undefined;
+    const hide = subject && this.pov.mode === 'eyes' ? subject : undefined;
+    if (hide !== this.headless) {
+      this.headless?.setHeadless(false);
+      hide?.setHeadless(true);
+      this.headless = hide;
+    }
+    for (const [id, f] of this.figures) f.label.visible = !(subject && id === this.pov.player);
+    if (subject) {
+      this.playerCamera(subject, ballW, dt);
+    } else if (this.preset !== 'free') {
+      const preset = this.preset === 'player' ? 'follow' : this.preset;
+      const v = cameraView(preset, p, { x: this.focus.x, y: 0, z: this.focus.z }, this.camera.aspect);
       const pos = new THREE.Vector3(v.position.x, v.position.y, v.position.z);
       const tgt = new THREE.Vector3(v.target.x, v.target.y, v.target.z);
       if (!this.camPlaced) {
@@ -972,8 +1096,48 @@ export class Scene3D {
     this.renderer.render(this.scene, this.camera);
   };
 
+  /** Through the chosen player's eyes (or over their shoulder), smoothed. */
+  private playerCamera(f: Figure, ball: V3, dt: number) {
+    const id = this.pov.player!;
+    if (id !== this.povWho) {
+      // A new player (or the ball carrier changed): glide across rather than cut.
+      if (this.povWho !== undefined || this.povState) this.povSwap = 0;
+      this.povWho = id;
+    }
+    this.povSwap = Math.min(1, this.povSwap + dt / 0.9);
+    const scale = f.figureScale;
+    const head = f.headWorld(this.tmp);
+    const eye = eyePoint(head.centre, head.yaw, scale);
+    const owner = this.snapshot.ball?.owner === id;
+    const ballPt = this.ball?.visible ? { x: this.ballPos.x, y: this.ballPos.y, z: this.ballPos.z } : this.snapshot.ball ? ball : undefined;
+    const mode = this.pov.mode;
+    const gaze = gazeFor(eye, head.yaw, ballPt, owner, POV_FOV[mode], this.camera.aspect);
+    const glide = this.povSwap * this.povSwap * (3 - 2 * this.povSwap);
+    const rates = {
+      move: 3 + (POV_RATES.move - 3) * glide,
+      rise: Math.min(POV_RATES.move, POV_RATES.rise + 3 * (1 - glide)),
+      turn: POV_RATES.turn * (0.6 + 0.4 * glide),
+    };
+    this.povState = smoothPov(this.povState, { eye, ...gaze }, dt, rates);
+    const v = povCamera(this.povState, mode, scale);
+    this.camPos.set(v.position.x, v.position.y, v.position.z);
+    this.camTarget.set(v.target.x, v.target.y, v.target.z);
+    this.camPlaced = true;
+    this.camera.fov += (v.fov - this.camera.fov) * (1 - Math.exp(-dt * 4));
+    this.camera.updateProjectionMatrix();
+    this.camera.position.copy(this.camPos);
+    this.controls.target.copy(this.camTarget);
+    this.camera.lookAt(this.camTarget);
+  }
+
   dispose() {
     cancelAnimationFrame(this.raf);
+    const el = this.renderer.domElement;
+    el.removeEventListener('pointerdown', this.onDown);
+    el.removeEventListener('pointermove', this.onMove);
+    el.removeEventListener('pointerup', this.onUp);
+    el.removeEventListener('pointercancel', this.onCancel);
+    el.removeEventListener('wheel', this.takeOver);
     this.resize.disconnect();
     this.controls.dispose();
     for (const f of this.figures.values()) this.removeFigure(f);

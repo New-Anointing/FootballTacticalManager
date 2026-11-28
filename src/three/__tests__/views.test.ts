@@ -47,7 +47,7 @@ describe('3D view maths', () => {
   });
 
   it('keeps every camera above the grass and out of the stands, on any pitch and screen', () => {
-    const presets: Exclude<CameraPreset, 'free'>[] = ['broadcast', 'tactical', 'behind', 'follow', 'top'];
+    const presets: Exclude<CameraPreset, 'free' | 'player'>[] = ['broadcast', 'tactical', 'behind', 'follow', 'top'];
     for (const format of [5, 7, 9, 11]) {
       const p = pitchFor(format);
       const st = stadiumLayout(p);

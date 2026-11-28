@@ -41,7 +41,7 @@ export function stadiumLayout(p: PitchSpec) {
   return { goalDepth, off, gap, rise, deep, front: p.width / 2 + off + gap };
 }
 
-export type CameraPreset = 'broadcast' | 'tactical' | 'behind' | 'top' | 'follow' | 'free';
+export type CameraPreset = 'broadcast' | 'tactical' | 'behind' | 'top' | 'follow' | 'player' | 'free';
 
 export const CAMERA_PRESETS: { id: CameraPreset; label: string; title: string }[] = [
   { id: 'broadcast', label: 'TV', title: 'Broadcast camera from the stand, following the ball' },
@@ -49,6 +49,7 @@ export const CAMERA_PRESETS: { id: CameraPreset; label: string; title: string }[
   { id: 'behind', label: 'Behind goal', title: 'From behind our goal, looking up the pitch' },
   { id: 'follow', label: 'Follow', title: 'Low camera following the ball' },
   { id: 'top', label: 'Top', title: 'Straight down, like the tactics board' },
+  { id: 'player', label: 'Player', title: "See the move through a player's eyes (pick who below, or tap a player)" },
   { id: 'free', label: 'Free', title: 'Drag to look around, scroll or pinch to zoom' },
 ];
 
@@ -103,7 +104,7 @@ const THREE_DEG = Math.PI / 180;
  * coordinates. Sizes scale with the pitch so a futsal court and a full pitch both frame
  * well; on a tall screen (a phone held upright) the cameras pull back to keep the play in.
  */
-export function cameraView(preset: Exclude<CameraPreset, 'free'>, p: PitchSpec, focus: V3, aspect = 16 / 9): CameraView {
+export function cameraView(preset: Exclude<CameraPreset, 'free' | 'player'>, p: PitchSpec, focus: V3, aspect = 16 / 9): CameraView {
   const L = p.length;
   const W = p.width;
   const fx = Math.max(-L / 2, Math.min(L / 2, focus.x));
@@ -166,4 +167,134 @@ export function turnTowards(from: number, to: number, maxStep: number): number {
   while (d > Math.PI) d -= 2 * Math.PI;
   while (d < -Math.PI) d += 2 * Math.PI;
   return from + Math.max(-maxStep, Math.min(maxStep, d));
+}
+
+// ---------------------------------------------------------------------------------------
+// Player view: the move through one player's eyes (or from just behind them)
+
+const wrap = (a: number) => {
+  while (a > Math.PI) a -= 2 * Math.PI;
+  while (a < -Math.PI) a += 2 * Math.PI;
+  return a;
+};
+const clampN = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+
+/** First person ("eyes") or third person, just behind and above the player ("shoulder"). */
+export type PovMode = 'eyes' | 'shoulder';
+
+export const POV_FOV: Record<PovMode, number> = { eyes: 72, shoulder: 64 };
+
+/**
+ * Where a player's eyes are, from the centre of their head (world) and the way the head
+ * faces: just in front of the face, so the camera never sits inside their own head.
+ */
+export function eyePoint(head: V3, headYaw: number, scale: number): V3 {
+  const ahead = 0.17 * scale;
+  return { x: head.x + Math.sin(headYaw) * ahead, y: head.y + 0.015 * scale, z: head.z + Math.cos(headYaw) * ahead };
+}
+
+/** Which way the camera looks: yaw (0 = +Z, as a figure's heading) and pitch (+ = up). */
+export interface Gaze {
+  yaw: number;
+  pitch: number;
+}
+
+/**
+ * Where a player looks: a blend of the way their head faces and the ball, so a pass or a
+ * run reads naturally. On the ball they look ahead more (the ball sits low in the
+ * picture); off it they follow the ball. If the ball is anywhere in front of them it is
+ * kept in the picture, and the view never stares at the sky or the grass.
+ */
+export function gazeFor(eye: V3, headYaw: number, ball: V3 | undefined, onBall: boolean, fov: number, aspect: number): Gaze {
+  const horizon = -0.06;
+  if (!ball) return { yaw: headYaw, pitch: horizon };
+  const dx = ball.x - eye.x;
+  const dz = ball.z - eye.z;
+  const d = Math.hypot(dx, dz);
+  const ballYaw = Math.atan2(dx, dz);
+  const ballPitch = Math.atan2(ball.y - eye.y, Math.max(0.3, d));
+  const halfV = ((fov / 2) * Math.PI) / 180;
+  const halfH = Math.atan(Math.tan(halfV) * aspect);
+  const off = wrap(ballYaw - headYaw);
+  // 1 while the ball is in front of them, easing to 0 as it goes behind their back:
+  // then they glance towards it rather than the view swinging round.
+  const t = clampN((Math.abs(off) - 1.5) / 0.7, 0, 1);
+  const front = 1 - t * t * (3 - 2 * t);
+  let yaw = headYaw;
+  if (d > 0.6) {
+    yaw = headYaw + off * (onBall ? 0.3 : 0.65) * (0.45 + 0.55 * front);
+    // Keep the ball in shot when it's in front of them.
+    const lim = Math.min(halfH, halfV * 1.6) * 0.8;
+    const kept = ballYaw + clampN(wrap(yaw - ballYaw), -lim, lim);
+    yaw += wrap(kept - yaw) * front;
+  }
+  let pitch = horizon + (ballPitch - horizon) * (onBall ? 0.2 : 0.6) * (0.4 + 0.6 * front);
+  // A ball a few metres away is kept in the picture; one at their own feet may drop out
+  // of the bottom (they look up to see the play, as players are coached to).
+  const far = clampN((d - 1.5) / 2.5, 0, 1);
+  pitch += (clampN(pitch, ballPitch - halfV * 0.8, ballPitch + halfV * 0.8) - pitch) * front * far;
+  return { yaw: wrap(yaw), pitch: clampN(pitch, -0.45, 0.45) };
+}
+
+/** The player-view camera's smoothed state. */
+export interface PovState {
+  eye: V3;
+  yaw: number;
+  pitch: number;
+}
+
+/** How fast (1/s) the player-view camera follows the eye across the grass, up and down, and turning. */
+export interface PovRates {
+  move: number;
+  rise: number;
+  turn: number;
+}
+
+export const POV_RATES: PovRates = { move: 40, rise: 3, turn: 5 };
+
+/**
+ * One frame of smoothing: the camera keeps up with the player across the pitch, but the
+ * up-and-down bob of their stride is damped away and turns are eased (the short way round).
+ */
+export function smoothPov(prev: PovState | undefined, next: PovState, dt: number, rates: PovRates = POV_RATES): PovState {
+  if (!prev) return { eye: { ...next.eye }, yaw: next.yaw, pitch: next.pitch };
+  const k = (r: number) => 1 - Math.exp(-Math.max(0, dt) * r);
+  const km = k(rates.move);
+  const kt = k(rates.turn);
+  return {
+    eye: {
+      x: prev.eye.x + (next.eye.x - prev.eye.x) * km,
+      y: prev.eye.y + (next.eye.y - prev.eye.y) * k(rates.rise),
+      z: prev.eye.z + (next.eye.z - prev.eye.z) * km,
+    },
+    yaw: wrap(prev.yaw + wrap(next.yaw - prev.yaw) * kt),
+    pitch: prev.pitch + (next.pitch - prev.pitch) * kt,
+  };
+}
+
+/** A unit vector for a yaw / pitch. */
+export function gazeDir(g: Gaze): V3 {
+  const c = Math.cos(g.pitch);
+  return { x: Math.sin(g.yaw) * c, y: Math.sin(g.pitch), z: Math.cos(g.yaw) * c };
+}
+
+/**
+ * The camera for a player view: at the eyes looking along the gaze, or over the right
+ * shoulder (behind, above and a little to the side, looking past the head the same way).
+ */
+export function povCamera(s: PovState, mode: PovMode, scale: number): CameraView {
+  const f = gazeDir(s);
+  if (mode === 'eyes') {
+    const reach = 25;
+    return { position: { ...s.eye }, target: { x: s.eye.x + f.x * reach, y: s.eye.y + f.y * reach, z: s.eye.z + f.z * reach }, fov: POV_FOV.eyes };
+  }
+  const fx = Math.sin(s.yaw);
+  const fz = Math.cos(s.yaw);
+  const back = 2.6 * scale;
+  const side = 0.55 * scale;
+  const position = { x: s.eye.x - fx * back - fz * side, y: Math.max(0.8, s.eye.y + 0.5 * scale), z: s.eye.z - fz * back + fx * side };
+  // Look a little lower than the eyes do, so the player sits in the lower part of the frame.
+  const look = gazeDir({ yaw: s.yaw, pitch: s.pitch * 0.7 - 0.06 });
+  const reach = 18;
+  return { position, target: { x: s.eye.x + look.x * reach, y: s.eye.y + look.y * reach, z: s.eye.z + look.z * reach }, fov: POV_FOV.shoulder };
 }

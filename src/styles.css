@@ -202,6 +202,14 @@ button.small { padding: 3px 8px; font-size: 12px; }
 .pitch3d-bar button { background: rgba(12, 20, 29, 0.72); border-color: rgba(255, 255, 255, 0.16); color: #e6edf3; backdrop-filter: blur(6px); }
 .pitch3d-bar button.active { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 .pitch3d-bar .sep { width: 1px; background: rgba(255, 255, 255, 0.2); margin: 0 4px; }
+.pitch3d-bar select { background: rgba(12, 20, 29, 0.72); border: 1px solid rgba(255, 255, 255, 0.16); color: #e6edf3; border-radius: 6px; padding: 3px 6px; font: inherit; font-size: 13px; max-width: 170px; backdrop-filter: blur(6px); }
+.pitch3d-bar select option, .pitch3d-bar select optgroup { background: #0c141d; color: #e6edf3; }
+.pitch3d-pov {
+  margin-right: auto; align-self: flex-start; padding: 4px 10px; border-radius: 999px; font-size: 12px; line-height: 1.5; color: rgba(230, 237, 243, 0.92);
+  background: rgba(12, 20, 29, 0.55); backdrop-filter: blur(4px); pointer-events: none; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0;
+}
+.pitch3d-pov b { font-weight: 700; }
+.pitch3d-pov .muted { opacity: 0.7; }
 .pitch3d-loading, .pitch3d-error { display: grid; place-items: center; gap: 8px; width: 100%; height: 100%; color: var(--muted); text-align: center; padding: 20px; }
 .pitch3d-error { position: absolute; inset: 0; background: rgba(11, 21, 32, 0.92); color: #e6edf3; align-content: center; }
 
@@ -280,6 +288,8 @@ kbd {
   .board-toolbar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: thin; }
   .pitch3d-bar { flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; }
   .pitch3d-bar button { flex: none; padding: 4px 8px; font-size: 12px; }
+  .pitch3d-bar select { flex: none; font-size: 12px; max-width: 140px; }
+  .pitch3d-pov { flex: none; }
   .board-toolbar > * { flex: none; }
   .mode-switch button { padding: 4px 9px; }
   .topbar .title input { max-width: 40vw; }

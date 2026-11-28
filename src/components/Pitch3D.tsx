@@ -16,20 +16,31 @@ interface Props {
   stepIndex: number;
 }
 
+/** Player view: whose eyes ('carrier' follows whoever has the ball), first person or over the shoulder. */
+interface PovPrefs {
+  player: string;
+  shoulder: boolean;
+}
+
 interface Prefs {
   camera: CameraPreset;
   names: boolean;
   arrows: boolean;
+  pov: PovPrefs;
 }
+
+export const BALL_CARRIER = 'carrier';
 
 const PREFS_KEY = 'ftm-3d-v1';
 
 function loadPrefs(): Prefs {
   try {
     const v = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
-    return { camera: v.camera ?? 'broadcast', names: v.names ?? true, arrows: v.arrows ?? true };
+    const pov = { player: typeof v.pov?.player === 'string' ? v.pov.player : BALL_CARRIER, shoulder: v.pov?.shoulder === true };
+    const camera = CAMERA_PRESETS.some((c) => c.id === v.camera) || v.camera === 'free' ? v.camera : 'broadcast';
+    return { camera, names: v.names ?? true, arrows: v.arrows ?? true, pov };
   } catch {
-    return { camera: 'broadcast', names: true, arrows: true };
+    return { camera: 'broadcast', names: true, arrows: true, pov: { player: BALL_CARRIER, shoulder: false } };
   }
 }
 
@@ -65,22 +76,37 @@ function ballEvents(t: Tactic, states: BoardState[], i: number): BallEvent[] {
   return out;
 }
 
-/** Who has the ball at their feet during playback, and how firmly (0..1). */
-function ballOwner(t: Tactic, states: BoardState[], i: number, stepT: number): { owner?: string; attach: number } {
+/**
+ * Who has the ball at their feet during playback, and how firmly (0..1); and whose ball
+ * it is for the "ball carrier" camera, which hands over to the receiver halfway through
+ * a pass so the viewer sees it leave and then arrive.
+ */
+export function ballOwner(t: Tactic, states: BoardState[], i: number, stepT: number): { owner?: string; attach: number; carrier?: string } {
   const step = t.steps[i];
   const before = states[i];
   const a = step?.ball;
   if (!step || !before) return { attach: 0 };
-  if (!a || !before.positions[a.from]) return { owner: before.ballOwner, attach: 1 };
-  if (a.type === 'dribble') return { owner: a.from, attach: 1 };
+  if (!a || !before.positions[a.from]) return { owner: before.ballOwner, attach: 1, carrier: before.ballOwner };
+  if (a.type === 'dribble') return { owner: a.from, attach: 1, carrier: a.from };
   const f = ballFlight(t, step, before, states[i + 1], carryFor(t, states, i));
-  if (!f) return { attach: 0 };
+  if (!f) return { attach: 0, carrier: a.from };
+  const carrier = f.receiver && stepT >= (f.release + f.arrive) / 2 ? f.receiver : a.from;
   const D = Math.max(0.1, step.duration);
   const sinceKick = (stepT - f.release) * D;
-  if (sinceKick <= ATTACH_TIME) return { owner: a.from, attach: Math.min(1, Math.max(0, 1 - sinceKick / ATTACH_TIME)) };
+  if (sinceKick <= ATTACH_TIME) return { owner: a.from, attach: Math.min(1, Math.max(0, 1 - sinceKick / ATTACH_TIME)), carrier };
   const toArrival = (f.arrive - stepT) * D;
-  if (f.receiver && toArrival <= ATTACH_TIME) return { owner: f.receiver, attach: Math.min(1, Math.max(0, 1 - toArrival / ATTACH_TIME)) };
-  return { attach: 0 };
+  if (f.receiver && toArrival <= ATTACH_TIME) return { owner: f.receiver, attach: Math.min(1, Math.max(0, 1 - toArrival / ATTACH_TIME)), carrier };
+  return { attach: 0, carrier };
+}
+
+/**
+ * Whose eyes the player view uses: the chosen player, or for "ball carrier" whoever has
+ * the ball (keeping the last one while nobody does, e.g. after a shot).
+ */
+export function povSubject(choice: string, snapshot: Snapshot3D, last?: string): string | undefined {
+  const here = (id?: string) => (id && snapshot.players.some((p) => p.id === id) ? id : undefined);
+  if (choice !== BALL_CARRIER && here(choice)) return choice;
+  return here(snapshot.ball?.carrier) ?? here(last) ?? here(snapshot.ball?.owner);
 }
 
 /**
@@ -121,7 +147,7 @@ export function snapshotFor(t: Tactic, states: BoardState[], frame: Frame | unde
       x: positions[pl.id].x, y: positions[pl.id].y,
       ...(actions[pl.id] ?? {}),
     }));
-  const held = frame ? ballOwner(t, states, frame.stepIndex, frame.stepT) : { owner: after.ballOwner, attach: 1 };
+  const held = frame ? ballOwner(t, states, frame.stepIndex, frame.stepT) : { owner: after.ballOwner, attach: 1, carrier: after.ballOwner };
   const ball = frame
     ? { x: frame.ball.x, y: frame.ball.y, height: frame.ballHeight, ...held }
     : { x: after.ball.x, y: after.ball.y, height: 0, ...held };
@@ -174,6 +200,7 @@ export default function Pitch3D({ tactic, states, frame, stepIndex }: Props) {
     try {
       const e = new Scene3D(hostRef.current);
       e.onUserCamera = () => setPrefs((p) => ({ ...p, camera: 'free' }));
+      e.onPickPlayer = (id) => setPrefs((p) => ({ ...p, pov: { ...p.pov, player: id } }));
       engine.current = e;
     } catch {
       setError('The 3D view needs WebGL, which this browser or device has switched off.');
@@ -197,15 +224,55 @@ export default function Pitch3D({ tactic, states, frame, stepIndex }: Props) {
     engine.current?.setSnapshot(snapshot);
   }, [snapshot]);
 
+  // Player view: resolve "ball carrier" to a player for this moment.
+  const lastCarrier = useRef<string | undefined>(undefined);
+  const subject = povSubject(prefs.pov.player, snapshot, lastCarrier.current);
+  useEffect(() => {
+    lastCarrier.current = subject;
+    engine.current?.setPov({ player: subject, mode: prefs.pov.shoulder ? 'shoulder' : 'eyes' });
+  }, [subject, prefs.pov.shoulder]);
+  const people = activePlayers(tactic);
+  const seen = prefs.camera === 'player' ? people.find((pl) => pl.id === subject) : undefined;
+  const setPov = (pov: Partial<PovPrefs>) => setPrefs((p) => ({ ...p, pov: { ...p.pov, ...pov } }));
+
   return (
     <div className="pitch3d">
       <div ref={hostRef} className="pitch3d-canvas" aria-label={`${tactic.name} in 3D`} role="img" />
       <div className="pitch3d-bar" role="toolbar" aria-label="Camera">
+        {seen && (
+          <div className="pitch3d-pov" aria-live="polite">
+            Seeing as <b>#{seen.number} {seen.role}</b>{seen.name ? ` ${seen.name}` : ''}
+            {prefs.pov.player === BALL_CARRIER && <span className="muted"> · ball carrier</span>}
+          </div>
+        )}
         {CAMERA_PRESETS.map((c) => (
           <button key={c.id} className={prefs.camera === c.id ? 'active' : ''} onClick={() => setPrefs({ ...prefs, camera: c.id })} title={c.title}>
             {c.label}
           </button>
         ))}
+        {prefs.camera === 'player' && (
+          <>
+            <select
+              className="pitch3d-who"
+              value={prefs.pov.player === BALL_CARRIER || people.some((pl) => pl.id === prefs.pov.player) ? prefs.pov.player : BALL_CARRIER}
+              onChange={(e) => setPov({ player: e.target.value })}
+              title="Whose eyes to see through (or tap a player)"
+              aria-label="Whose eyes to see through"
+            >
+              <option value={BALL_CARRIER}>Ball carrier</option>
+              {(['home', 'away'] as const).map((team) => (
+                <optgroup key={team} label={team === 'home' ? tactic.homeName || 'Home' : tactic.awayName || 'Away'}>
+                  {people.filter((pl) => pl.team === team).map((pl) => (
+                    <option key={pl.id} value={pl.id}>#{pl.number} {pl.role}{pl.name ? ` · ${pl.name}` : ''}</option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            <button className={prefs.pov.shoulder ? 'active' : ''} onClick={() => setPov({ shoulder: !prefs.pov.shoulder })} title="Over the shoulder: from just behind and above the player, instead of through their eyes">
+              Shoulder
+            </button>
+          </>
+        )}
         <span className="sep" />
         <button className={prefs.names ? 'active' : ''} onClick={() => setPrefs({ ...prefs, names: !prefs.names })} title="Show names under the shirt numbers">Names</button>
         <button className={prefs.arrows ? 'active' : ''} onClick={() => setPrefs({ ...prefs, arrows: !prefs.arrows })} title="Show this step's runs and passes on the grass">Arrows</button>
