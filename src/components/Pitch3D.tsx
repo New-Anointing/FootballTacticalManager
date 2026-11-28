@@ -3,9 +3,10 @@ import { ballFlight, type Frame } from '../engine/animation';
 import { dist } from '../engine/geometry';
 import { carryFor } from '../engine/motion';
 import { activePlayers, type BoardState } from '../model/tactic';
-import type { Tactic } from '../model/types';
+import type { Tactic, Vec } from '../model/types';
 import { useStore } from '../store';
 import { Scene3D, type Arrow3D, type Snapshot3D } from '../three/Scene3D';
+import { actionPhase, type ActionKind, type PlayerAction } from '../three/body';
 import { CAMERA_PRESETS, type CameraPreset } from '../three/views';
 
 interface Props {
@@ -32,18 +33,98 @@ function loadPrefs(): Prefs {
   }
 }
 
+/** How long the ball takes to settle at a foot after a touch, or to leave it after a kick (s). */
+const ATTACH_TIME = 0.15;
+
+interface BallEvent {
+  player: string;
+  kind: ActionKind;
+  /** Seconds from the start of the step being played (negative: an earlier step). */
+  at: number;
+  face: Vec;
+}
+
+/** Kicks and first touches of the steps round the one being played, timed in seconds. */
+function ballEvents(t: Tactic, states: BoardState[], i: number): BallEvent[] {
+  const out: BallEvent[] = [];
+  let offset = 0;
+  for (let j = i - 1; j >= 0 && j > i - 2; j--) offset -= Math.max(0.1, t.steps[j].duration);
+  for (let j = Math.max(0, i - 1); j <= Math.min(t.steps.length - 1, i + 1); j++) {
+    const step = t.steps[j];
+    const D = Math.max(0.1, step.duration);
+    const a = step.ball;
+    if (a && a.type !== 'dribble' && states[j] && states[j + 1]) {
+      const f = ballFlight(t, step, states[j], states[j + 1], carryFor(t, states, j));
+      if (f) {
+        out.push({ player: a.from, kind: a.type, at: offset + f.release * D, face: f.dest });
+        if (f.receiver) out.push({ player: f.receiver, kind: 'receive', at: offset + f.arrive * D, face: f.origin });
+      }
+    }
+    offset += D;
+  }
+  return out;
+}
+
+/** Who has the ball at their feet during playback, and how firmly (0..1). */
+function ballOwner(t: Tactic, states: BoardState[], i: number, stepT: number): { owner?: string; attach: number } {
+  const step = t.steps[i];
+  const before = states[i];
+  const a = step?.ball;
+  if (!step || !before) return { attach: 0 };
+  if (!a || !before.positions[a.from]) return { owner: before.ballOwner, attach: 1 };
+  if (a.type === 'dribble') return { owner: a.from, attach: 1 };
+  const f = ballFlight(t, step, before, states[i + 1], carryFor(t, states, i));
+  if (!f) return { attach: 0 };
+  const D = Math.max(0.1, step.duration);
+  const sinceKick = (stepT - f.release) * D;
+  if (sinceKick <= ATTACH_TIME) return { owner: a.from, attach: Math.min(1, Math.max(0, 1 - sinceKick / ATTACH_TIME)) };
+  const toArrival = (f.arrive - stepT) * D;
+  if (f.receiver && toArrival <= ATTACH_TIME) return { owner: f.receiver, attach: Math.min(1, Math.max(0, 1 - toArrival / ATTACH_TIME)) };
+  return { attach: 0 };
+}
+
+/**
+ * Ball actions in progress at a playback moment: the kicker winds up and strikes so the
+ * foot meets the ball at the release, the receiver shapes to control it as it arrives,
+ * a dribbler takes touches. Nothing while paused (players stand in a neutral pose).
+ */
+export function actionsAt(t: Tactic, states: BoardState[], frame: Frame | undefined): Record<string, { action: PlayerAction; face?: Vec }> {
+  const out: Record<string, { action: PlayerAction; face?: Vec }> = {};
+  if (!frame || frame.stepIndex < 0 || frame.stepIndex >= t.steps.length) return out;
+  const i = frame.stepIndex;
+  const step = t.steps[i];
+  const now = frame.stepT * Math.max(0.1, step.duration);
+  const best: Record<string, number> = {};
+  for (const e of ballEvents(t, states, i)) {
+    const phase = actionPhase(e.kind, now - e.at);
+    if (phase === null) continue;
+    // One-touch play: the kick wins over the touch that set it up.
+    const score = Math.abs(phase - 0.5) * (e.kind === 'receive' ? 1.5 : 1);
+    if (best[e.player] !== undefined && best[e.player] <= score) continue;
+    best[e.player] = score;
+    out[e.player] = { action: { kind: e.kind, phase }, face: e.face };
+  }
+  if (step.ball?.type === 'dribble' && !out[step.ball.from]) out[step.ball.from] = { action: { kind: 'dribble', phase: frame.stepT } };
+  return out;
+}
+
 /** What the 3D scene should show: the playback frame, or the end of the step being viewed. */
 export function snapshotFor(t: Tactic, states: BoardState[], frame: Frame | undefined, stepIndex: number): Snapshot3D {
   const shown = frame ? frame.stepIndex : stepIndex;
   const after = states[Math.min(states.length - 1, shown + 1)] ?? states[0];
   const positions = frame ? frame.positions : after.positions;
+  const actions = actionsAt(t, states, frame);
   const players = activePlayers(t)
     .filter((pl) => positions[pl.id])
     .map((pl) => ({
       id: pl.id, team: pl.team, gk: pl.line === 'GK', number: String(pl.number), label: pl.name || pl.role,
       x: positions[pl.id].x, y: positions[pl.id].y,
+      ...(actions[pl.id] ?? {}),
     }));
-  const ball = frame ? { x: frame.ball.x, y: frame.ball.y, height: frame.ballHeight } : { x: after.ball.x, y: after.ball.y, height: 0 };
+  const held = frame ? ballOwner(t, states, frame.stepIndex, frame.stepT) : { owner: after.ballOwner, attach: 1 };
+  const ball = frame
+    ? { x: frame.ball.x, y: frame.ball.y, height: frame.ballHeight, ...held }
+    : { x: after.ball.x, y: after.ball.y, height: 0, ...held };
   const arrows: Arrow3D[] = [];
   const step = shown >= 0 ? t.steps[shown] : undefined;
   const before = shown >= 0 ? states[shown] : undefined;

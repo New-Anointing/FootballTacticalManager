@@ -3,7 +3,11 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { pitchFor, type PitchSpec } from '../model/pitch';
 import type { TeamSide, Vec } from '../model/types';
 import { apronFor, drawPitch } from './pitchTexture';
-import { cameraView, figureScale, goalHeight, stadiumLayout, stride, toWorld, turnTowards, type CameraPreset, type V3 } from './views';
+import {
+  ANKLE, applyAction, BALL_SPOT, cycleRate, facingFor, gaitPose, headPitch, HIP_HEIGHT, lookAngles, newPose, SHIN, smoothstep, THIGH, wrapAngle,
+  type PlayerAction,
+} from './body';
+import { cameraView, figureScale, goalHeight, stadiumLayout, toWorld, turnTowards, type CameraPreset, type V3 } from './views';
 
 export interface Actor3D {
   id: string;
@@ -13,6 +17,10 @@ export interface Actor3D {
   label: string;
   x: number;
   y: number;
+  /** A ball action in progress (kick, controlling touch, dribble). */
+  action?: PlayerAction;
+  /** Pitch point to turn towards during the action (where the ball goes / comes from). */
+  face?: Vec;
 }
 
 export interface Arrow3D {
@@ -25,7 +33,15 @@ export interface Arrow3D {
 
 export interface Snapshot3D {
   players: Actor3D[];
-  ball?: { x: number; y: number; height: number };
+  ball?: {
+    x: number;
+    y: number;
+    height: number;
+    /** Player with the ball at their feet; it's drawn at their foot rather than their centre. */
+    owner?: string;
+    /** 0..1: how far the ball is drawn at the owner's foot (eases in and out round a kick). */
+    attach?: number;
+  };
   /** During playback positions are shown exactly; otherwise players move smoothly to new spots. */
   playing: boolean;
   arrows: Arrow3D[];
@@ -62,8 +78,12 @@ function inkFor(hex: string): string {
 
 /** Shared meshes' building blocks. */
 interface Parts {
-  leg: THREE.BufferGeometry;
-  arm: THREE.BufferGeometry;
+  thigh: THREE.BufferGeometry;
+  shin: THREE.BufferGeometry;
+  shortsLeg: THREE.BufferGeometry;
+  upperArm: THREE.BufferGeometry;
+  forearm: THREE.BufferGeometry;
+  nose: THREE.BufferGeometry;
   sleeve: THREE.BufferGeometry;
   torso: THREE.BufferGeometry;
   shorts: THREE.BufferGeometry;
@@ -78,55 +98,90 @@ interface Kit {
   socks: THREE.Material;
 }
 
-/** A footballer built from simple shapes, with a running animation driven by real speed. */
+/** A footballer built from simple shapes: jointed legs and arms, a turning head. */
 class Figure {
   readonly root = new THREE.Group();
   private readonly upper = new THREE.Group();
+  private readonly headG = new THREE.Group();
   private readonly hips: THREE.Group[] = [];
+  private readonly knees: THREE.Group[] = [];
   private readonly shoulders: THREE.Group[] = [];
-  private readonly meshes: THREE.Mesh[] = [];
+  private readonly elbows: THREE.Group[] = [];
+  private readonly torso: THREE.Mesh;
+  private readonly socks: THREE.Mesh[] = [];
+  private readonly shorts: THREE.Mesh[] = [];
+  private readonly shirt: THREE.Mesh[] = [];
+  private readonly pose = newPose();
+  private readonly scale: number;
   readonly label: THREE.Sprite;
   labelKey = '';
   pos = new THREE.Vector2();
   speed = 0;
   heading = 0;
+  private moveDir = 0;
+  private accel = 0;
+  private fwd = 1;
+  private lat = 0;
+  private chest = 0;
+  private neck = 0;
+  private tilt = 0;
+  private time = Math.random() * 100;
+  private ballAhead = 0;
   phase = Math.random() * Math.PI * 2;
   placed = false;
 
   constructor(parts: Parts, kit: Kit, skin: THREE.Material, hair: THREE.Material, boots: THREE.Material, scale: number) {
     const s = scale;
+    this.scale = s;
     this.root.scale.setScalar(s);
-    this.upper.position.y = 0.93;
+    this.upper.position.y = HIP_HEIGHT;
     this.root.add(this.upper);
-    const add = (geo: THREE.BufferGeometry, mat: THREE.Material, parent: THREE.Object3D, x: number, y: number, z = 0) => {
+    const add = (geo: THREE.BufferGeometry, mat: THREE.Material, parent: THREE.Object3D, x: number, y: number, z = 0, list?: THREE.Mesh[]) => {
       const m = new THREE.Mesh(geo, mat);
       m.position.set(x, y, z);
       m.castShadow = true;
       parent.add(m);
-      this.meshes.push(m);
+      list?.push(m);
       return m;
     };
-    // Legs hang from the hips and swing forwards and back.
+    const group = (parent: THREE.Object3D, x: number, y: number, order: THREE.EulerOrder = 'XYZ') => {
+      const g = new THREE.Group();
+      g.position.set(x, y, 0);
+      g.rotation.order = order;
+      parent.add(g);
+      return g;
+    };
+    // Legs: thigh from the hip, shin from the knee, boot at the ankle.
     for (const side of [-1, 1]) {
-      const hip = new THREE.Group();
-      hip.position.set(side * 0.1, 0.93, 0);
-      this.root.add(hip);
-      add(parts.leg, kit.socks, hip, 0, -0.38);
-      add(parts.boot, boots, hip, 0, -0.83, 0.05);
+      const hip = group(this.root, side * 0.1, HIP_HEIGHT, 'ZXY');
+      add(parts.shortsLeg, kit.shorts, hip, 0, -0.08, 0, this.shorts);
+      add(parts.thigh, skin, hip, 0, -THIGH / 2);
+      const knee = group(hip, 0, -THIGH);
+      add(parts.shin, kit.socks, knee, 0, -SHIN / 2 + 0.01, 0, this.socks);
+      add(parts.boot, boots, knee, 0, -SHIN - ANKLE + 0.04, 0.05);
       this.hips.push(hip);
+      this.knees.push(knee);
     }
-    add(parts.shorts, kit.shorts, this.upper, 0, -0.04);
-    const torso = add(parts.torso, kit.shirt, this.upper, 0, 0.36);
-    torso.scale.z = 0.72;
-    add(parts.head, skin, this.upper, 0, 0.84);
-    add(parts.hair, hair, this.upper, 0, 0.855, -0.005);
+    add(parts.shorts, kit.shorts, this.upper, 0, 0.01, 0, this.shorts);
+    this.torso = add(parts.torso, kit.shirt, this.upper, 0, 0.36, 0, this.shirt);
+    this.torso.scale.z = 0.72;
+    // Head on a neck pivot so it can turn and nod.
+    this.headG.position.set(0, 0.72, 0);
+    this.headG.rotation.order = 'YXZ';
+    this.upper.add(this.headG);
+    add(parts.head, skin, this.headG, 0, 0.12);
+    const h = add(parts.hair, hair, this.headG, 0, 0.13, -0.018);
+    h.rotation.x = -0.45;
+    add(parts.nose, skin, this.headG, 0, 0.105, 0.11);
+    // Arms: upper arm from the shoulder, forearm from the elbow.
     for (const side of [-1, 1]) {
-      const sh = new THREE.Group();
-      sh.position.set(side * 0.235, 0.6, 0);
-      this.upper.add(sh);
-      add(parts.arm, skin, sh, 0, -0.25);
-      add(parts.sleeve, kit.shirt, sh, 0, -0.05);
+      const sh = group(this.upper, side * 0.235, 0.6, 'ZXY');
+      add(parts.upperArm, skin, sh, 0, -0.14);
+      add(parts.sleeve, kit.shirt, sh, 0, -0.05, 0, this.shirt);
+      const el = group(sh, 0, -0.28);
+      add(parts.forearm, skin, el, 0, -0.13);
       this.shoulders.push(sh);
+      this.elbows.push(el);
     }
     this.label = new THREE.Sprite(new THREE.SpriteMaterial({ depthTest: false, transparent: true, sizeAttenuation: false }));
     this.label.renderOrder = 10;
@@ -134,44 +189,116 @@ class Figure {
   }
 
   setKit(kit: Kit) {
-    // Order of meshes: legs+boots (x2), shorts, torso, head, hair, arm+sleeve (x2).
-    const [legL, , legR, , shorts, torso, , , , sleeveL, , sleeveR] = this.meshes;
-    legL.material = kit.socks;
-    legR.material = kit.socks;
-    shorts.material = kit.shorts;
-    torso.material = kit.shirt;
-    sleeveL.material = kit.shirt;
-    sleeveR.material = kit.shirt;
+    for (const m of this.socks) m.material = kit.socks;
+    for (const m of this.shorts) m.material = kit.shorts;
+    for (const m of this.shirt) m.material = kit.shirt;
   }
 
-  /** Move towards `to` (world X/Z); exact during playback, smoothly otherwise. */
-  update(to: { x: number; z: number }, dt: number, exact: boolean, lookAt: { x: number; z: number }) {
+  /**
+   * Move towards `to` (world X/Z; exact during playback, smoothly otherwise) and pose the
+   * body: gait from the real speed and direction, any ball action on top, head on the ball.
+   */
+  update(to: { x: number; z: number }, dt: number, exact: boolean, ball: V3, actor: Actor3D, owner: boolean, faceAt?: { x: number; z: number }) {
     if (!this.placed) {
       this.pos.set(to.x, to.z);
       this.placed = true;
     }
-    const prev = this.pos.clone();
+    const step = Math.max(1e-3, dt);
+    const px = this.pos.x;
+    const pz = this.pos.y;
     if (exact) this.pos.set(to.x, to.z);
-    else this.pos.lerp(new THREE.Vector2(to.x, to.z), 1 - Math.exp(-dt * 6));
-    const v = this.pos.clone().sub(prev).divideScalar(Math.max(1e-3, dt));
-    const sp = v.length();
+    else {
+      const k = 1 - Math.exp(-dt * 6);
+      this.pos.set(px + (to.x - px) * k, pz + (to.z - pz) * k);
+    }
+    const vx = (this.pos.x - px) / step;
+    const vz = (this.pos.y - pz) / step;
+    const sp = Math.hypot(vx, vz);
+    const before = this.speed;
     // Smooth the speed so the animation doesn't flicker between frames.
     this.speed += (sp - this.speed) * (1 - Math.exp(-dt * 10));
-    const wanted = this.speed > 0.6 ? Math.atan2(v.x, v.y) : Math.atan2(lookAt.x - this.pos.x, lookAt.z - this.pos.y);
-    this.heading = turnTowards(this.heading, wanted, dt * (this.speed > 0.6 ? 9 : 3));
-    const st = stride(this.speed);
-    this.phase += st.rate * dt;
-    const sw = st.swing * Math.sin(this.phase);
-    this.hips[0].rotation.x = sw;
-    this.hips[1].rotation.x = -sw;
-    this.shoulders[0].rotation.x = -sw * 0.8;
-    this.shoulders[1].rotation.x = sw * 0.8;
-    this.upper.rotation.x = st.lean;
-    const bob = st.swing ? Math.abs(Math.cos(this.phase)) * 0.045 * (st.swing / 0.85) : 0;
-    this.upper.position.y = 0.93 + bob;
-    for (const h of this.hips) h.position.y = 0.93 + bob * 0.6;
+    this.accel += ((this.speed - before) / step - this.accel) * (1 - Math.exp(-dt * 4));
+    if (sp > 0.2) this.moveDir = turnTowards(this.moveDir, Math.atan2(vx, vz), dt * 14);
+    this.time += dt;
+
+    const act = actor.action;
+    const striking = !!act && act.kind !== 'dribble';
+    const bx = ball.x - this.pos.x;
+    const bz = ball.z - this.pos.y;
+    const ballDist = Math.hypot(bx, bz);
+    const toBall = Math.atan2(bx, bz);
+    const near = owner || ballDist < 1.2;
+    let wanted: number;
+    let rate: number;
+    if (striking && faceAt) {
+      wanted = Math.atan2(faceAt.x - this.pos.x, faceAt.z - this.pos.y);
+      rate = 10;
+    } else if (this.speed > 0.5) {
+      wanted = near ? this.moveDir : facingFor(this.moveDir, toBall, this.speed, this.heading);
+      rate = 8;
+    } else {
+      wanted = near ? this.heading : toBall;
+      rate = 3;
+    }
+    this.heading = turnTowards(this.heading, wanted, dt * rate);
+    // Direction of travel relative to the way the body faces (forwards, sideways, back).
+    const rel = this.moveDir - this.heading;
+    const kd = 1 - Math.exp(-dt * 8);
+    this.fwd += (Math.cos(rel) - this.fwd) * kd;
+    this.lat += (Math.sin(rel) - this.lat) * kd;
+    this.phase += cycleRate(this.speed, this.fwd, this.lat) * dt;
+
+    const pose = this.pose;
+    gaitPose(pose, {
+      speed: this.speed, phase: this.phase, fwd: this.fwd, lat: this.lat, accel: this.accel,
+      scale: this.scale, time: this.time, dribble: owner && act?.kind === 'dribble',
+    });
+    const busy = applyAction(pose, act);
+    this.ballAhead += (pose.ballAhead - this.ballAhead) * (1 - Math.exp(-dt * 12));
+
+    // Head and (standing) chest towards the ball; a player on the ball looks ahead.
+    const kl = 1 - Math.exp(-dt * 5);
+    let neckT: number;
+    let chestT: number;
+    let tiltT: number;
+    if (owner && !striking) {
+      neckT = 0;
+      chestT = 0;
+      tiltT = 0.22 + 0.12 * Math.sin(this.time * 1.3);
+    } else {
+      const still = (1 - smoothstep(0.3, 2.5, this.speed)) * (1 - busy);
+      const look = lookAngles(wrapAngle(toBall - this.heading - pose.twist), still);
+      neckT = look.neck * (striking ? 0.3 : 1);
+      chestT = look.chest;
+      tiltT = headPitch(1.7 * this.scale, ballDist, ball.y);
+    }
+    this.neck += (neckT - this.neck) * kl;
+    this.chest += (chestT - this.chest) * kl;
+    this.tilt += (tiltT - this.tilt) * kl;
+
+    // Joints.
+    for (let i = 0; i < 2; i++) {
+      this.hips[i].rotation.set(pose.hip[i], 0, pose.hipSide[i]);
+      this.hips[i].position.set((i === 0 ? -0.1 : 0.1) + pose.sway, pose.pelvis, 0);
+      this.knees[i].rotation.x = pose.knee[i];
+      this.shoulders[i].rotation.set(pose.shoulder[i], 0, pose.shoulderSide[i]);
+      this.elbows[i].rotation.x = -pose.elbow[i];
+    }
+    this.upper.position.set(pose.sway, pose.pelvis, 0);
+    this.upper.rotation.set(pose.lean, pose.twist + this.chest, pose.roll);
+    this.torso.scale.set(1 + pose.breath * 0.012, 1, 0.72 + pose.breath * 0.02);
+    this.headG.rotation.set(this.tilt - pose.lean * 0.6, this.neck, 0);
     this.root.position.set(this.pos.x, 0, this.pos.y);
     this.root.rotation.y = this.heading;
+  }
+
+  /** Where the ball sits when it's at this player's feet (world), given its radius. */
+  ballSpot(out: THREE.Vector3, radius: number): THREE.Vector3 {
+    const lx = BALL_SPOT.x * this.scale;
+    const lz = BALL_SPOT.z * this.scale + radius * 0.8 + this.ballAhead;
+    const c = Math.cos(this.heading);
+    const s = Math.sin(this.heading);
+    return out.set(this.pos.x + lx * c + lz * s, radius, this.pos.y - lx * s + lz * c);
   }
 }
 
@@ -358,6 +485,10 @@ export class Scene3D {
   private ball?: THREE.Mesh;
   private ballShadow?: THREE.Mesh;
   private ballPos = new THREE.Vector3();
+  private readonly ballTarget = new THREE.Vector3();
+  private readonly ballSpot = new THREE.Vector3();
+  private readonly ballPrev = new THREE.Vector3();
+  private readonly ballAxis = new THREE.Vector3();
   private ballPlaced = false;
   private pitch: PitchSpec = pitchFor(11);
   private look: Look3D = { format: 11, homeColor: '#f5c518', awayColor: '#e5484d', names: true, arrows: true };
@@ -403,11 +534,15 @@ export class Scene3D {
     this.scene.add(this.pitchGroup, this.arrowGroup);
 
     this.parts = {
-      leg: new THREE.CapsuleGeometry(0.075, 0.72, 4, 10),
-      arm: new THREE.CapsuleGeometry(0.052, 0.44, 4, 8),
+      thigh: new THREE.CapsuleGeometry(0.082, THIGH - 0.15, 4, 10),
+      shin: new THREE.CapsuleGeometry(0.066, SHIN - 0.12, 4, 10),
+      shortsLeg: new THREE.CylinderGeometry(0.108, 0.1, 0.2, 12),
+      upperArm: new THREE.CapsuleGeometry(0.052, 0.2, 4, 8),
+      forearm: new THREE.CapsuleGeometry(0.045, 0.18, 4, 8),
+      nose: new THREE.SphereGeometry(0.024, 8, 6),
       sleeve: new THREE.CylinderGeometry(0.074, 0.068, 0.16, 10),
       torso: new THREE.CapsuleGeometry(0.19, 0.3, 6, 14),
-      shorts: new THREE.CylinderGeometry(0.205, 0.225, 0.27, 14),
+      shorts: new THREE.CylinderGeometry(0.205, 0.215, 0.2, 14),
       head: new THREE.SphereGeometry(0.115, 16, 12),
       hair: new THREE.SphereGeometry(0.122, 16, 8, 0, Math.PI * 2, 0, Math.PI / 2.1),
       boot: new THREE.BoxGeometry(0.12, 0.08, 0.26),
@@ -777,7 +912,7 @@ export class Scene3D {
       const f = this.figures.get(a.id);
       if (!f) continue;
       const to = toWorld(p, a);
-      f.update(to, dt, s.playing, ballW);
+      f.update(to, dt, s.playing, ballW, a, s.ball?.owner === a.id, a.face ? toWorld(p, a.face) : undefined);
       const top = 2.2 * figureScale(p);
       f.label.position.set(f.root.position.x, top, f.root.position.z);
       const px = labelPx / Math.max(1, this.host.clientHeight);
@@ -788,17 +923,21 @@ export class Scene3D {
     // Ball: rolls along the ground, flies when it's lofted.
     if (this.ball && s.ball) {
       const br = (this.ball.geometry as THREE.SphereGeometry).parameters.radius;
-      const target = new THREE.Vector3(ballW.x, br + ballW.y, ballW.z);
+      const target = this.ballTarget.set(ballW.x, br + ballW.y, ballW.z);
+      // At a player's feet the ball sits in front of their foot, not under their centre.
+      const owner = s.ball.owner ? this.figures.get(s.ball.owner) : undefined;
+      const attach = s.ball.attach ?? 1;
+      if (owner && attach > 0) target.lerp(owner.ballSpot(this.ballSpot, br), attach);
       if (!this.ballPlaced) {
         this.ballPos.copy(target);
         this.ballPlaced = true;
       }
-      const prev = this.ballPos.clone();
+      const prev = this.ballPrev.copy(this.ballPos);
       if (s.playing) this.ballPos.copy(target);
       else this.ballPos.lerp(target, 1 - Math.exp(-dt * 7));
-      const move = this.ballPos.clone().sub(prev);
+      const move = prev.subVectors(this.ballPos, prev);
       const ground = Math.hypot(move.x, move.z);
-      if (ground > 1e-4) this.ball.rotateOnWorldAxis(new THREE.Vector3(move.z, 0, -move.x).normalize(), ground / br);
+      if (ground > 1e-4) this.ball.rotateOnWorldAxis(this.ballAxis.set(move.z, 0, -move.x).normalize(), ground / br);
       this.ball.position.copy(this.ballPos);
       this.ball.visible = true;
       const hgt = this.ballPos.y - br;
